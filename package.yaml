@@ -3,12 +3,35 @@ version: '0.1.0.0'
 synopsis: Bags
 description: Bags
 
+default-extensions:
+  - DataKinds
+  - DeriveDataTypeable
+  - DeriveFoldable
+  - DeriveGeneric
+  - DeriveTraversable
+  - FunctionalDependencies
+  - GADTs
+  - GeneralizedNewtypeDeriving
+  - KindSignatures
+  - LambdaCase
+  - MultiParamTypeClasses
+  - OverloadedStrings
+  - RankNTypes
+  - ScopedTypeVariables
+  - StandaloneDeriving
+  - TupleSections
+  - TypeApplications
+  - TypeFamilies
+  - TypeOperators
+
 ghc-options:
   - -Wall
   - -Werror
 
 dependencies:
   - base
+  - containers
+  - text
 
 library:
   source-dirs: src
