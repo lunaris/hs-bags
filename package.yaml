@@ -1,0 +1,15 @@
+name: bags
+version: '0.1.0.0'
+synopsis: Bags
+description: Bags
+
+ghc-options:
+  - -Wall
+  - -Werror
+
+dependencies:
+  - base
+
+library:
+  source-dirs: src
+  exposed-modules: Bags
