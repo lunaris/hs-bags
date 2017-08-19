@@ -1,9 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DeriveTraversable          #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GADTs                      #-}
@@ -68,9 +70,14 @@ type family PathNames (path :: k) :: [Symbol] where
 
 data Field (name :: Symbol) ty
 
-type family All (c :: k -> Constraint) (as :: [k]) :: Constraint where
-  All c '[]       = ()
-  All c (a ': as) = (c a, All c as)
+class All (c :: k -> Constraint) (as :: [k]) where
+  withAll :: (forall x. c x => Proxy x -> r) -> [r]
+
+instance All c '[] where
+  withAll _ = []
+
+instance (c a, All c as) => All c (a ': as) where
+  withAll k = k (Proxy @a) : withAll @_ @c @as k
 
 class (All KnownSymbol (PathNames path), Typeable ty)
   =>  HasField (fields :: [*]) (path :: k2) (ty :: *) | fields path -> ty where
@@ -103,7 +110,7 @@ type family ErrorWhenNothing fields (path :: k) (maybeTy :: Maybe *) :: Constrai
         (     'Text "The field "
         ':<>: PathNamesError (PathNames path)
         ':<>: 'Text " could not be found. The available fields are:"
-        ':$$: FieldNamesError ('Text "") fields
+        ':$$: FieldNamesError ('Text "  ") fields
         )
 
 type family PathNamesError (names :: [Symbol]) :: ErrorMessage where
@@ -119,43 +126,53 @@ type family PathNamesError (names :: [Symbol]) :: ErrorMessage where
 type family FieldNamesError (prefix :: ErrorMessage) (fields :: [*]) :: ErrorMessage where
   FieldNamesError prefix '[Field name subfields]
     =     prefix
-    ':<>: 'Text "  "
     ':<>: 'ShowType name
+    ':<>: 'Text " //"
     ':$$: FieldNamesError (prefix ':<>: 'Text "  ") subfields
-  FieldNamesError prefix '[Field name _]
+  FieldNamesError prefix '[Field name ty]
     =     prefix
-    ':<>: 'Text "  "
     ':<>: 'ShowType name
+    ':<>: 'Text " :: "
+    ':<>: 'ShowType ty
   FieldNamesError prefix (Field name subfields ': fields)
     =     prefix
-    ':<>: 'Text "  "
     ':<>: 'ShowType name
+    ':<>: 'Text " //"
     ':$$: FieldNamesError (prefix ':<>: 'Text "  ") subfields
     ':$$: FieldNamesError prefix fields
-  FieldNamesError prefix (Field name _ ': fields)
+  FieldNamesError prefix (Field name ty ': fields)
     =     prefix
-    ':<>: 'Text "  "
     ':<>: 'ShowType name
+    ':<>: 'Text " :: "
+    ':<>: 'ShowType ty
     ':$$: FieldNamesError prefix fields
 
 empty :: Bag fields
 empty
   = Bag M.empty
 
-insert :: forall name fields ty. HasField fields name ty => ty -> Bag fields -> Bag fields
-insert --x (Bag m)
-  = undefined -- Bag (M.insert (symbolText @name) (toDyn x) m)
+insert
+  :: forall name fields ty.
+     HasField fields name ty
+  => ty
+  -> Bag fields
+  -> Bag fields
+
+insert x (Bag m)
+  = Bag (M.insert (pathText @name) (toDyn x) m)
 
 lookup :: forall name fields ty. HasField fields name ty => Bag fields -> Maybe ty
-lookup --(Bag m)
-  = undefined -- M.lookup (symbolText @name) m >>= fromDynamic
+lookup (Bag m)
+  = M.lookup (pathText @name) m >>= fromDynamic
 
-{-
+pathText :: forall path. All KnownSymbol (PathNames path) => Tx.Text
+pathText
+  = Tx.intercalate "/" $
+      withAll @_ @KnownSymbol @(PathNames path) symbolText
 
-symbolText :: forall s. KnownSymbol s => Tx.Text
+symbolText :: KnownSymbol s => proxy s -> Tx.Text
 symbolText
-  = Tx.pack (symbolVal (Proxy @s))
-  -}
+  = Tx.pack . symbolVal
 
 type ApplicationJourneyFields
   = '[ Field "MortgageAmount" MortgageAmount
