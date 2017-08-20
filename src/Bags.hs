@@ -1,31 +1,21 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
-{-# LANGUAGE DeriveFoldable             #-}
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveTraversable          #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE FunctionalDependencies     #-}
-{-# LANGUAGE GADTs                      #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE KindSignatures             #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PolyKinds                  #-}
-{-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
-{-# LANGUAGE StandaloneDeriving         #-}
-{-# LANGUAGE TupleSections              #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE TypeFamilies               #-}
-{-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE UndecidableInstances       #-}
-{-# LANGUAGE UndecidableSuperClasses    #-}
+{-# LANGUAGE AllowAmbiguousTypes    #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE PolyKinds              #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeApplications       #-}
+{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeOperators          #-}
+{-# LANGUAGE UndecidableInstances   #-}
 
 module Bags where
+
+import All
+import Paths
 
 import           Data.Dynamic
 import qualified Data.Map.Strict as M
@@ -36,48 +26,7 @@ import           GHC.TypeLits
 newtype Bag (fields :: [*])
   = Bag { _bagMap :: M.Map Tx.Text Dynamic }
 
-data Path name
-  = Leaf name
-  | Node name (Path name)
-
-type family (//) (name :: Symbol) (path :: k2) :: Path Symbol where
-  name // leaf
-    = 'Node name ('Leaf leaf)
-  name // path
-    = 'Node name path
-  name // path
-    = TypeError
-        (     'Text "The type "
-        ':<>: 'ShowType path
-        ':<>: 'Text " is neither a Symbol nor a Path Symbol"
-        )
-
-infixr 5 //
-
-type family PathNames (path :: k) :: [Symbol] where
-  PathNames name
-    = '[name]
-  PathNames ('Leaf name)
-    = '[name]
-  PathNames ('Node name path)
-    = name ': PathNames path
-  PathNames path
-    = TypeError
-        (     'Text "The type "
-        ':<>: 'ShowType path
-        ':<>: 'Text " is neither a Symbol nor a Path Symbol"
-        )
-
 data Field (name :: Symbol) ty
-
-class All (c :: k -> Constraint) (as :: [k]) where
-  withAll :: (forall x. c x => Proxy x -> r) -> [r]
-
-instance All c '[] where
-  withAll _ = []
-
-instance (c a, All c as) => All c (a ': as) where
-  withAll k = k (Proxy @a) : withAll @_ @c @as k
 
 class (All KnownSymbol (PathNames path), Typeable ty)
   =>  HasField (fields :: [*]) (path :: k2) (ty :: *) | fields path -> ty where
@@ -164,15 +113,6 @@ insert x (Bag m)
 lookup :: forall name fields ty. HasField fields name ty => Bag fields -> Maybe ty
 lookup (Bag m)
   = M.lookup (pathText @name) m >>= fromDynamic
-
-pathText :: forall path. All KnownSymbol (PathNames path) => Tx.Text
-pathText
-  = Tx.intercalate "/" $
-      withAll @_ @KnownSymbol @(PathNames path) symbolText
-
-symbolText :: KnownSymbol s => proxy s -> Tx.Text
-symbolText
-  = Tx.pack . symbolVal
 
 type ApplicationJourneyFields
   = '[ Field "MortgageAmount" MortgageAmount
