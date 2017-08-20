@@ -7,6 +7,7 @@ module Bags
   ) where
 
 import Operations as Exports
+import JSON       as Exports
 import Types      as Exports
 
 type ApplicationJourneyFields

@@ -9,7 +9,11 @@
 {-# LANGUAGE TypeOperators          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 
-module Types where
+module Types
+  ( Bag (..)
+  , Field
+  , HasField
+  ) where
 
 import All
 import Paths

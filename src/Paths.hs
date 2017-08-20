@@ -16,6 +16,7 @@ module Paths
   , type (//)
 
   , PathNames
+  , NamesPath
   , pathText
   ) where
 
@@ -28,7 +29,7 @@ data Path name
   = Leaf name
   | Node name (Path name)
 
-type family (//) (name :: Symbol) (path :: k2) :: Path Symbol where
+type family (//) (name :: Symbol) (path :: k) :: Path Symbol where
   name // leaf
     = 'Node name ('Leaf leaf)
   name // path
@@ -55,6 +56,14 @@ type family PathNames (path :: k) :: [Symbol] where
         ':<>: 'ShowType path
         ':<>: 'Text " is neither a Symbol nor a Path Symbol"
         )
+
+type family NamesPath (names :: [Symbol]) :: Path Symbol where
+  NamesPath '[name]
+    = 'Leaf name
+  NamesPath (name ': names)
+    = 'Node name (NamesPath names)
+  NamesPath '[]
+    = TypeError ('Text "Cannot create an empty path")
 
 pathText :: forall path. All KnownSymbol (PathNames path) => Tx.Text
 pathText
