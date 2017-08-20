@@ -70,6 +70,6 @@ pathText
   = Tx.intercalate "/" $
       withAll @_ @KnownSymbol @(PathNames path) symbolText
 
-symbolText :: KnownSymbol s => proxy s -> Tx.Text
+symbolText :: KnownSymbol s => proxy s -> [Tx.Text]
 symbolText
-  = Tx.pack . symbolVal
+  = (:[]) . Tx.pack . symbolVal

@@ -13,6 +13,8 @@ module Types
   ( Bag (..)
   , Field
   , HasField
+
+  , FieldAssocs
   ) where
 
 import All
@@ -30,7 +32,7 @@ newtype Bag (fields :: [*])
 data Field (name :: Symbol) ty
 
 class (All KnownSymbol (PathNames path), Typeable ty)
-  =>  HasField (fields :: [*]) (path :: k2) (ty :: *) | fields path -> ty where
+  =>  HasField (fields :: [*]) (path :: k) (ty :: *) | fields path -> ty where
 
 instance (All KnownSymbol (PathNames path),
           Typeable ty,
@@ -38,9 +40,9 @@ instance (All KnownSymbol (PathNames path),
           maybeTy ~ 'Just ty,
           ErrorWhenNothing fields path maybeTy)
 
-      =>  HasField (fields :: [*]) (path :: k2) (ty :: *) where
+      =>  HasField (fields :: [*]) (path :: k) (ty :: *) where
 
-type family Lookup (fields :: [*]) (path :: k2) :: Maybe * where
+type family Lookup (fields :: [*]) (path :: k) :: Maybe * where
   Lookup (Field name fields ': _) ('Node name path)
     = Lookup fields path
   Lookup (Field name ty ': _) ('Leaf name)
@@ -96,3 +98,31 @@ type family FieldNamesError (prefix :: ErrorMessage) (fields :: [*]) :: ErrorMes
     ':<>: 'Text " :: "
     ':<>: 'ShowType ty
     ':$$: FieldNamesError prefix fields
+
+type family FieldAssocs (fields :: [*]) :: [(Path Symbol, *)] where
+  FieldAssocs fields
+    = FieldAssocs' '[] fields
+
+type family FieldAssocs' (path :: [Symbol]) (fields :: [*]) :: [(Path Symbol, *)] where
+  FieldAssocs' path (Field name subfields ': fields)
+    =  FieldAssocs' (name ': path) subfields
+    ++ FieldAssocs' path fields
+  FieldAssocs' path (Field name ty ': fields)
+    =  '(NamesPath (Reverse (name ': path)), ty)
+    ': FieldAssocs' path fields
+  FieldAssocs' _ '[]
+    = '[]
+
+type family Reverse (as :: [k]) :: [k] where
+  Reverse as
+    = Reverse' '[] as
+
+type family Reverse' (acc :: [k]) (as :: [k]) :: [k] where
+  Reverse' acc '[]
+    = acc
+  Reverse' acc (a ': as)
+    = Reverse' (a ': acc) as
+
+type family (++) (as :: [k]) (bs :: [k]) :: [k] where
+  '[]       ++ bs = bs
+  (a ': as) ++ bs = a ': (as ++ bs)

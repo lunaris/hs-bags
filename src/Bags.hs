@@ -1,4 +1,5 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Bags
   ( module Exports
@@ -9,6 +10,8 @@ module Bags
 import Operations as Exports
 import JSON       as Exports
 import Types      as Exports
+
+import Data.Aeson
 
 type ApplicationJourneyFields
   = '[ Field "MortgageAmount" MortgageAmount
@@ -23,8 +26,8 @@ type TransactionFields
 
 newtype MortgageAmount
   = MortgageAmount { _mortgageAmountInt :: Int }
-  deriving (Show)
+  deriving (Show, ToJSON)
 
 newtype PropertyValue
   = PropertyValue { _propertyValueInt :: Int }
-  deriving (Show)
+  deriving (Show, ToJSON)

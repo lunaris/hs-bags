@@ -18,10 +18,10 @@ import Data.Proxy
 import GHC.Exts
 
 class All (c :: k -> Constraint) (as :: [k]) where
-  withAll :: (forall x. c x => Proxy x -> r) -> [r]
+  withAll :: Monoid m => (forall x. c x => Proxy x -> m) -> m
 
 instance All c '[] where
-  withAll _ = []
+  withAll _ = mempty
 
 instance (c a, All c as) => All c (a ': as) where
-  withAll k = k (Proxy @a) : withAll @_ @c @as k
+  withAll k = k (Proxy @a) `mappend` withAll @_ @c @as k
