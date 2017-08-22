@@ -2,6 +2,7 @@
 
 module Validation
   ( Validation (..)
+  , validating
   ) where
 
 import Data.Semigroup
@@ -10,6 +11,12 @@ data Validation e a
   = Failure e
   | Success a
   deriving (Eq, Show)
+
+validating :: (e -> b) -> (a -> b) -> Validation e a -> b
+validating f g
+  = \case
+      Failure e -> f e
+      Success x -> g x
 
 instance Functor (Validation e) where
   fmap f

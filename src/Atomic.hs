@@ -55,10 +55,19 @@ lookupValid
       Valid ty)
 
   => Bag Unvalidated fields
-  -> Maybe ty
+  -> ValidLookupError ty
 
-lookupValid b
-  = lookup @name b >>= \(Unvalidated x) ->
-      case validatePlain x of
-        Failure _ -> Nothing
-        Success y -> Just y
+lookupValid
+  = maybe MissingField
+      (validating InvalidField ValidField . validatePlain . getUnvalidated)
+
+  . lookup @name
+
+data ValidLookupError a
+  = MissingField
+  | InvalidField (PlainError a)
+  | ValidField a
+
+deriving instance (Eq (PlainError a), Eq a) => Eq (ValidLookupError a)
+deriving instance (Ord (PlainError a), Ord a) => Ord (ValidLookupError a)
+deriving instance (Show (PlainError a), Show a) => Show (ValidLookupError a)
