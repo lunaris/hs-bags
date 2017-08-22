@@ -9,11 +9,11 @@
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Atomic
-  ( Atomic (..)
+  ( Valid (..)
   , Unvalidated (..)
 
   , insertPlain
-  , lookupAtom
+  , lookupValid
   ) where
 
 import Operations
@@ -23,11 +23,11 @@ import Validation
 import Data.Aeson hiding (Result(..))
 import Prelude    hiding (lookup)
 
-class Atomic a where
-  type Plain a           :: *
-  type ValidationError a :: *
-  validateAtom           :: Plain a -> Validation (ValidationError a) a
-  unvalidateAtom         :: a -> Plain a
+class Valid a where
+  type Plain a      :: *
+  type PlainError a :: *
+  validatePlain     :: Plain a -> Validation (PlainError a) a
+  unvalidateValid   :: a -> Plain a
 
 newtype Unvalidated a
   = Unvalidated { getUnvalidated :: Plain a }
@@ -40,7 +40,7 @@ deriving instance ToJSON (Plain a) => ToJSON (Unvalidated a)
 insertPlain
   :: forall name fields ty.
      (HasField fields name ty,
-      Atomic ty)
+      Valid ty)
 
   => Plain ty
   -> Bag Unvalidated fields
@@ -49,16 +49,16 @@ insertPlain
 insertPlain
   = insert @name . Unvalidated
 
-lookupAtom
+lookupValid
   :: forall name fields ty.
      (HasField fields name ty,
-      Atomic ty)
+      Valid ty)
 
   => Bag Unvalidated fields
   -> Maybe ty
 
-lookupAtom b
+lookupValid b
   = lookup @name b >>= \(Unvalidated x) ->
-      case validateAtom x of
+      case validatePlain x of
         Failure _ -> Nothing
         Success y -> Just y

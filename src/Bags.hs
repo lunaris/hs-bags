@@ -32,29 +32,29 @@ newtype Name
   = Name { _nameString :: String }
   deriving (Show, ToJSON)
 
-instance Atomic Name where
+instance Valid Name where
   type Plain Name
     = String
-  type ValidationError Name
+  type PlainError Name
     = String
-  validateAtom
+  validatePlain
     = \case
         "" -> Failure "Empty string"
         s  -> Success (Name s)
-  unvalidateAtom
+  unvalidateValid
     = _nameString
 
 newtype Age
   = Age { _ageInt :: Int }
   deriving (Show, ToJSON)
 
-instance Atomic Age where
+instance Valid Age where
   type Plain Age
     = Int
-  type ValidationError Age
+  type PlainError Age
     = String
-  validateAtom x
+  validatePlain x
     | x < 0     = Failure "Non-positive age"
     | otherwise = Success (Age x)
-  unvalidateAtom
+  unvalidateValid
     = _ageInt
