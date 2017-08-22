@@ -10,6 +10,7 @@ module Bags
   ) where
 
 import Atomic     as Exports
+import Form       as Exports
 import JSON       as Exports
 import Operations as Exports
 import Types      as Exports
@@ -44,6 +45,27 @@ instance Valid Name where
   unvalidateValid
     = _nameString
 
+instance FormField Name where
+  toFormField result
+    = [ TextQ TextQuestion
+          { _tqKey      = QuestionKey "Name"
+          , _tqQuestion = "What is your name?"
+          , _tqValue    = value
+          , _tqError    = err
+          }
+
+      ]
+
+    where
+      (value, err)
+        = case result of
+            MissingField ->
+              (Nothing, Just "Please tell us your name")
+            InvalidField (v, e) ->
+              (Just (show v), Just e)
+            ValidField v ->
+              (Just (show (unvalidateValid v)), Nothing)
+
 newtype Age
   = Age { _ageInt :: Int }
   deriving (Show, ToJSON)
@@ -58,3 +80,24 @@ instance Valid Age where
     | otherwise = Success (Age x)
   unvalidateValid
     = _ageInt
+
+instance FormField Age where
+  toFormField result
+    = [ TextQ TextQuestion
+          { _tqKey      = QuestionKey "Age"
+          , _tqQuestion = "How old are you?"
+          , _tqValue    = value
+          , _tqError    = err
+          }
+
+      ]
+
+    where
+      (value, err)
+        = case result of
+            MissingField ->
+              (Nothing, Just "Please tell us your age")
+            InvalidField (v, e) ->
+              (Just (show v), Just e)
+            ValidField v ->
+              (Just (show (unvalidateValid v)), Nothing)

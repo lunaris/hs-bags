@@ -14,6 +14,7 @@ module Atomic
 
   , insertPlain
   , lookupValid
+  , ValidLookupResult (..)
   ) where
 
 import Operations
@@ -55,19 +56,26 @@ lookupValid
       Valid ty)
 
   => Bag Unvalidated fields
-  -> ValidLookupError ty
+  -> ValidLookupResult ty
 
 lookupValid
-  = maybe MissingField
-      (validating InvalidField ValidField . validatePlain . getUnvalidated)
+  = maybe MissingField k . lookup @name
+  where
+    k (Unvalidated x)
+      = case validatePlain x of
+          Failure e -> InvalidField (x, e)
+          Success y -> ValidField y
 
-  . lookup @name
-
-data ValidLookupError a
+data ValidLookupResult a
   = MissingField
-  | InvalidField (PlainError a)
+  | InvalidField (Plain a, PlainError a)
   | ValidField a
 
-deriving instance (Eq (PlainError a), Eq a) => Eq (ValidLookupError a)
-deriving instance (Ord (PlainError a), Ord a) => Ord (ValidLookupError a)
-deriving instance (Show (PlainError a), Show a) => Show (ValidLookupError a)
+deriving instance (Eq (Plain a), Eq (PlainError a), Eq a)
+                => Eq (ValidLookupResult a)
+
+deriving instance (Ord (Plain a), Ord (PlainError a), Ord a)
+                => Ord (ValidLookupResult a)
+
+deriving instance (Show (Plain a), Show (PlainError a), Show a)
+                => Show (ValidLookupResult a)
