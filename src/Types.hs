@@ -26,7 +26,7 @@ import qualified Data.Text       as Tx
 import           GHC.Exts
 import           GHC.TypeLits
 
-newtype Bag (fields :: [*])
+newtype Bag f (fields :: [*])
   = Bag { _bagMap :: M.Map Tx.Text Dynamic }
 
 data Field (name :: Symbol) ty
@@ -99,18 +99,18 @@ type family FieldNamesError (prefix :: ErrorMessage) (fields :: [*]) :: ErrorMes
     ':<>: 'ShowType ty
     ':$$: FieldNamesError prefix fields
 
-type family FieldAssocs (fields :: [*]) :: [(Path Symbol, *)] where
-  FieldAssocs fields
-    = FieldAssocs' '[] fields
+type family FieldAssocs (f :: * -> *) (fields :: [*]) :: [(Path Symbol, *)] where
+  FieldAssocs f fields
+    = FieldAssocs' f '[] fields
 
-type family FieldAssocs' (path :: [Symbol]) (fields :: [*]) :: [(Path Symbol, *)] where
-  FieldAssocs' path (Field name subfields ': fields)
-    =  FieldAssocs' (name ': path) subfields
-    ++ FieldAssocs' path fields
-  FieldAssocs' path (Field name ty ': fields)
-    =  '(NamesPath (Reverse (name ': path)), ty)
-    ': FieldAssocs' path fields
-  FieldAssocs' _ '[]
+type family FieldAssocs' (f :: * -> *) (path :: [Symbol]) (fields :: [*]) :: [(Path Symbol, *)] where
+  FieldAssocs' f path (Field name subfields ': fields)
+    =  FieldAssocs' f (name ': path) subfields
+    ++ FieldAssocs' f path fields
+  FieldAssocs' f path (Field name ty ': fields)
+    =  '(NamesPath (Reverse (name ': path)), f ty)
+    ': FieldAssocs' f path fields
+  FieldAssocs' _ _ '[]
     = '[]
 
 type family Reverse (as :: [k]) :: [k] where

@@ -53,9 +53,9 @@ instance (All KnownSymbol (PathNames (Fst fieldAssoc)),
         = First Nothing
 
 bagToJSON
-  :: forall fields.
-     All FieldAssocToJSON (FieldAssocs fields)
-  => Bag fields
+  :: forall fields f.
+     All FieldAssocToJSON (FieldAssocs f fields)
+  => Bag f fields
   -> Value
 
 bagToJSON (Bag m)
@@ -65,4 +65,4 @@ bagToJSON (Bag m)
     f k dyn
       = fromMaybe (error "bagToJSON: Impossible")
       $ getFirst
-      $ withAll @_ @FieldAssocToJSON @(FieldAssocs fields) (fieldAssocValue k dyn)
+      $ withAll @_ @FieldAssocToJSON @(FieldAssocs f fields) (fieldAssocValue k dyn)

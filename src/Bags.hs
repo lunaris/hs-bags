@@ -33,7 +33,7 @@ newtype Name
   deriving (Show, ToJSON)
 
 instance Atomic Name where
-  type Unvalidated Name
+  type Plain Name
     = String
   type ValidationError Name
     = String
@@ -49,7 +49,7 @@ newtype Age
   deriving (Show, ToJSON)
 
 instance Atomic Age where
-  type Unvalidated Age
+  type Plain Age
     = Int
   type ValidationError Age
     = String
