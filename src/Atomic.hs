@@ -21,8 +21,9 @@ import Operations
 import Types
 import Validation
 
-import Data.Aeson hiding (Result(..))
-import Prelude    hiding (lookup)
+import Control.Monad.Reader
+import Data.Aeson           hiding (Result(..))
+import Prelude              hiding (lookup)
 
 class Valid a where
   type Plain a      :: *
@@ -51,15 +52,15 @@ insertPlain
   = insert @name . Unvalidated
 
 lookupValid
-  :: forall name fields ty.
-     (HasField fields name ty,
+  :: forall name fields ty m.
+     (MonadReader (Bag Unvalidated fields) m,
+      HasField fields name ty,
       Valid ty)
 
-  => Bag Unvalidated fields
-  -> ValidLookupResult ty
+  => m (ValidLookupResult ty)
 
 lookupValid
-  = maybe MissingField k . lookup @name
+  = maybe MissingField k <$> lookup @name
   where
     k (Unvalidated x)
       = case validatePlain x of

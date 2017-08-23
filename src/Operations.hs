@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,6 +10,8 @@ module Operations where
 import Paths
 import Types
 
+import           Control.Monad.Reader
+import           Data.Coerce
 import           Data.Dynamic
 import           Data.Functor.Identity
 import qualified Data.Map.Strict       as M
@@ -31,15 +34,18 @@ insert x (Bag m)
   = Bag (M.insert (pathText @name) (toDyn x) m)
 
 lookup
-  :: forall name f fields ty.
-     (Typeable f,
+  :: forall name f fields ty m.
+     (MonadReader (Bag f fields) m,
+      Typeable f,
       HasField fields name ty)
 
-  => Bag f fields
-  -> Maybe (f ty)
+  => m (Maybe (f ty))
 
-lookup (Bag m)
-  = M.lookup (pathText @name) m >>= fromDynamic
+lookup
+  = asks k
+  where
+    k (Bag m)
+      = M.lookup (pathText @name) m >>= fromDynamic
 
 insertValue
   :: forall name fields ty.
@@ -52,10 +58,11 @@ insertValue
   = insert @name . Identity
 
 lookupValue
-  :: forall name fields ty.
-     HasField fields name ty
-  => Bag Identity fields
-  -> Maybe ty
+  :: forall name fields ty m.
+     (MonadReader (Bag Identity fields) m,
+      HasField fields name ty)
+
+  => m (Maybe ty)
 
 lookupValue
-  = fmap runIdentity . lookup @name
+  = coerce <$> lookup @name
