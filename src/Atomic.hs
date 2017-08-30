@@ -1,6 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -21,7 +23,9 @@ import Operations
 import Types
 import Validation
 
-import Control.Monad.Reader
+import Control.Monad.Trans.Maybe
+import Control.Monad.Trans.State
+import Control.Monad.Trans.Class
 import Data.Aeson           hiding (Result(..))
 import Prelude              hiding (lookup)
 
@@ -52,20 +56,34 @@ insertPlain
   = insert @name . Unvalidated
 
 lookupValid
-  :: forall name fields ty m.
-     (MonadReader (Bag Unvalidated fields) m,
-      HasField fields name ty,
+  :: forall name fields ty.
+     (HasField fields name ty,
       Valid ty)
 
-  => m (ValidLookupResult ty)
+  => Bag Unvalidated fields
+  -> MaybeT (State (Bag ValidLookupResult fields)) ty
 
-lookupValid
-  = maybe MissingField k <$> lookup @name
-  where
-    k (Unvalidated x)
-      = case validatePlain x of
-          Failure e -> InvalidField (x, e)
-          Success y -> ValidField y
+lookupValid bag
+  = case lookup @name bag of
+      Nothing -> do
+        lift $ modify (insert @name MissingField)
+        MaybeT $ pure Nothing
+
+      Just (Unvalidated x) ->
+        case validatePlain x of
+          Failure e -> do
+            lift $ modify (insert @name (InvalidField (x, e)))
+            MaybeT $ pure Nothing
+
+          Success y -> do
+            lift $ modify (insert @name (ValidField y))
+            MaybeT $ pure (Just y)
+
+{-
+MonadReader (Bag Unvalidated fields) m
+MonadState (Bag ValidLookupResult fields) m
+MonadMaybe
+-}
 
 data ValidLookupResult a
   = MissingField
@@ -80,3 +98,30 @@ deriving instance (Ord (Plain a), Ord (PlainError a), Ord a)
 
 deriving instance (Show (Plain a), Show (PlainError a), Show a)
                 => Show (ValidLookupResult a)
+
+instance (ToJSON (Plain a), ToJSON (PlainError a), ToJSON a)
+      =>  ToJSON (ValidLookupResult a) where
+
+  toJSON
+    = \case
+        MissingField ->
+          object
+            [ "type"  .= ("MissingField" :: String)
+            , "value" .= ()
+            ]
+
+        InvalidField (x, e) ->
+          object
+            [ "type"  .= ("InvalidField" :: String)
+            , "value" .= object
+                [ "plain" .= x
+                , "error" .= e
+                ]
+
+            ]
+
+        ValidField y ->
+          object
+            [ "type"  .= ("ValidField" :: String)
+            , "value" .= y
+            ]
