@@ -66,3 +66,7 @@ lookupValue
 
 lookupValue
   = coerce <$> lookup @name
+
+union :: Bag f fields -> Bag f fields -> Bag f fields
+union (Bag m1) (Bag m2)
+  = Bag (m1 `M.union` m2)

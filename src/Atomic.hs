@@ -1,7 +1,9 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
@@ -15,7 +17,11 @@ module Atomic
   , Unvalidated (..)
 
   , insertPlain
+
+  , Builder
+  , runBuilder
   , lookupValid
+  , lookupValidResult
   , ValidLookupResult (..)
   ) where
 
@@ -55,16 +61,53 @@ insertPlain
 insertPlain
   = insert @name . Unvalidated
 
+newtype BagA fields a
+  = BagA (Bag ValidLookupResult fields -> (Bag ValidLookupResult fields, Maybe a))
+
+instance Functor (BagA fields) where
+  fmap f (BagA k)
+    = BagA (fmap (fmap f) . k)
+
+instance Applicative (BagA fields) where
+  pure x
+    = BagA (\b -> (b, Just x))
+
+  BagA k1 <*> BagA k2
+    = BagA $ \b0 ->
+        let (b1, ma1) = k1 b0
+            (b2, ma2) = k2 b1
+
+        in  ( b2
+            , case (ma1, ma2) of
+                (Just f, Just x) ->
+                  Just (f x)
+                _ ->
+                  Nothing
+
+            )
+
+newtype Builder fields a
+  = Builder { _runBuilder :: MaybeT (State (Bag ValidLookupResult fields)) a }
+  deriving (Applicative, Functor, Monad)
+
+runBuilder
+  :: Bag ValidLookupResult fields
+  -> Builder fields a
+  -> (Maybe a, Bag ValidLookupResult fields)
+
+runBuilder bag (Builder m)
+  = runState (runMaybeT m) bag
+
 lookupValid
   :: forall name fields ty.
      (HasField fields name ty,
       Valid ty)
 
   => Bag Unvalidated fields
-  -> MaybeT (State (Bag ValidLookupResult fields)) ty
+  -> Builder fields ty
 
 lookupValid bag
-  = case lookup @name bag of
+  = Builder $ case lookup @name bag of
       Nothing -> do
         lift $ modify (insert @name MissingField)
         MaybeT $ pure Nothing
@@ -78,6 +121,33 @@ lookupValid bag
           Success y -> do
             lift $ modify (insert @name (ValidField y))
             MaybeT $ pure (Just y)
+
+lookupValidResult
+  :: forall name fields ty.
+     (HasField fields name ty,
+      Valid ty)
+
+  => Bag Unvalidated fields
+  -> Builder fields (ValidLookupResult ty)
+
+lookupValidResult bag
+  = Builder $ case lookup @name bag of
+      Nothing -> do
+        let r = MissingField
+        lift $ modify (insert @name r)
+        MaybeT $ pure $ Just r
+
+      Just (Unvalidated x) ->
+        case validatePlain x of
+          Failure e -> do
+            let r = InvalidField (x, e)
+            lift $ modify (insert @name r)
+            MaybeT $ pure $ Just r
+
+          Success y -> do
+            let r = ValidField y
+            lift $ modify (insert @name r)
+            MaybeT $ pure (Just r)
 
 {-
 MonadReader (Bag Unvalidated fields) m
