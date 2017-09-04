@@ -1,7 +1,9 @@
 {-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
 
 module Bags
   ( module Exports
@@ -13,6 +15,7 @@ import Atomic     as Exports
 import Form       as Exports
 import JSON       as Exports
 import Operations as Exports
+import Paths      as Exports
 import Types      as Exports
 import Validation as Exports
 
@@ -80,6 +83,24 @@ instance Valid Age where
     | otherwise = Success (Age x)
   unvalidateValid
     = _ageInt
+
+b1, b2, b3, b4
+  :: Bag Unvalidated PersonFields
+
+b1 = insertPlain @"Name" "Will" empty
+b2 = insertPlain @"Age" 30 b1
+b3 = insertPlain @"Age" (-2) b1
+b4 = insertPlain @("Pet" // "Name") "Fido" b2
+
+{-
+c1 :: BagM PersonFields (Either (Name, Age) String)
+c1
+  = do
+      (name, age) <- independently $
+        (,) <$> lookupValid @"Name" <*> lookupValid @"Age"
+
+      maybePetName <- lookupValidMaybe @("Pet" // "Name")
+      -}
 
 instance FormField Age where
   toFormField result

@@ -16,24 +16,29 @@ module Atomic
   ( Valid (..)
   , Unvalidated (..)
 
+  , ValidLookupResult (..)
+  , validLookupResultToMaybe
+
   , insertPlain
 
-  , Builder
-  , runBuilder
+  , BagA
+  , runBagA
   , lookupValid
+
+  , BagM
+  , runBagM
+  , independently
+  , lookupValidMaybe
   , lookupValidResult
-  , ValidLookupResult (..)
   ) where
 
 import Operations
 import Types
 import Validation
 
-import Control.Monad.Trans.Maybe
-import Control.Monad.Trans.State
-import Control.Monad.Trans.Class
-import Data.Aeson           hiding (Result(..))
-import Prelude              hiding (lookup)
+import Control.Monad
+import Data.Aeson    hiding (Result(..))
+import Prelude       hiding (lookup)
 
 class Valid a where
   type Plain a      :: *
@@ -49,116 +54,17 @@ deriving instance Ord (Plain a) => Ord (Unvalidated a)
 deriving instance Show (Plain a) => Show (Unvalidated a)
 deriving instance ToJSON (Plain a) => ToJSON (Unvalidated a)
 
-insertPlain
-  :: forall name fields ty.
-     (HasField fields name ty,
-      Valid ty)
-
-  => Plain ty
-  -> Bag Unvalidated fields
-  -> Bag Unvalidated fields
-
-insertPlain
-  = insert @name . Unvalidated
-
-newtype BagA fields a
-  = BagA (Bag ValidLookupResult fields -> (Bag ValidLookupResult fields, Maybe a))
-
-instance Functor (BagA fields) where
-  fmap f (BagA k)
-    = BagA (fmap (fmap f) . k)
-
-instance Applicative (BagA fields) where
-  pure x
-    = BagA (\b -> (b, Just x))
-
-  BagA k1 <*> BagA k2
-    = BagA $ \b0 ->
-        let (b1, ma1) = k1 b0
-            (b2, ma2) = k2 b1
-
-        in  ( b2
-            , case (ma1, ma2) of
-                (Just f, Just x) ->
-                  Just (f x)
-                _ ->
-                  Nothing
-
-            )
-
-newtype Builder fields a
-  = Builder { _runBuilder :: MaybeT (State (Bag ValidLookupResult fields)) a }
-  deriving (Applicative, Functor, Monad)
-
-runBuilder
-  :: Bag ValidLookupResult fields
-  -> Builder fields a
-  -> (Maybe a, Bag ValidLookupResult fields)
-
-runBuilder bag (Builder m)
-  = runState (runMaybeT m) bag
-
-lookupValid
-  :: forall name fields ty.
-     (HasField fields name ty,
-      Valid ty)
-
-  => Bag Unvalidated fields
-  -> Builder fields ty
-
-lookupValid bag
-  = Builder $ case lookup @name bag of
-      Nothing -> do
-        lift $ modify (insert @name MissingField)
-        MaybeT $ pure Nothing
-
-      Just (Unvalidated x) ->
-        case validatePlain x of
-          Failure e -> do
-            lift $ modify (insert @name (InvalidField (x, e)))
-            MaybeT $ pure Nothing
-
-          Success y -> do
-            lift $ modify (insert @name (ValidField y))
-            MaybeT $ pure (Just y)
-
-lookupValidResult
-  :: forall name fields ty.
-     (HasField fields name ty,
-      Valid ty)
-
-  => Bag Unvalidated fields
-  -> Builder fields (ValidLookupResult ty)
-
-lookupValidResult bag
-  = Builder $ case lookup @name bag of
-      Nothing -> do
-        let r = MissingField
-        lift $ modify (insert @name r)
-        MaybeT $ pure $ Just r
-
-      Just (Unvalidated x) ->
-        case validatePlain x of
-          Failure e -> do
-            let r = InvalidField (x, e)
-            lift $ modify (insert @name r)
-            MaybeT $ pure $ Just r
-
-          Success y -> do
-            let r = ValidField y
-            lift $ modify (insert @name r)
-            MaybeT $ pure (Just r)
-
-{-
-MonadReader (Bag Unvalidated fields) m
-MonadState (Bag ValidLookupResult fields) m
-MonadMaybe
--}
-
 data ValidLookupResult a
   = MissingField
   | InvalidField (Plain a, PlainError a)
   | ValidField a
+
+validLookupResultToMaybe :: ValidLookupResult a -> Maybe a
+validLookupResultToMaybe
+  = \case
+      MissingField    -> Nothing
+      InvalidField _  -> Nothing
+      ValidField x    -> Just x
 
 deriving instance (Eq (Plain a), Eq (PlainError a), Eq a)
                 => Eq (ValidLookupResult a)
@@ -195,3 +101,174 @@ instance (ToJSON (Plain a), ToJSON (PlainError a), ToJSON a)
             [ "type"  .= ("ValidField" :: String)
             , "value" .= y
             ]
+
+insertPlain
+  :: forall name fields ty.
+     (HasField fields name ty,
+      Valid ty)
+
+  => Plain ty
+  -> Bag Unvalidated fields
+  -> Bag Unvalidated fields
+
+insertPlain
+  = insert @name . Unvalidated
+
+type BagF fields a
+  = BagState fields -> (Maybe a, BagState fields)
+
+data BagState fields
+  = BagState
+      { _bsRead  :: Bag Unvalidated fields
+      , _bsWrite :: Bag ValidLookupResult fields
+      }
+
+runBagF
+  :: Bag Unvalidated fields
+  -> BagF fields a
+  -> (Maybe a, Bag ValidLookupResult fields)
+
+runBagF b k
+  = let s         = BagState b empty
+        (mx, s')  = k s
+
+    in  (mx, _bsWrite s')
+
+fmapBagF :: (a -> b) -> BagF fields a -> BagF fields b
+fmapBagF f k
+  = \s -> let (mx, s') = k s in (fmap f mx, s')
+
+pureBagF :: a -> s -> (Maybe a, s)
+pureBagF
+  = (,) . Just
+
+writeResult
+  :: forall name fields ty.
+     HasField fields name ty
+  => ValidLookupResult ty
+  -> BagState fields
+  -> BagState fields
+
+writeResult r s
+  = s { _bsWrite = insert @name r (_bsWrite s) }
+
+newtype BagA fields a
+  = BagA { _runBagA :: BagF fields a }
+
+runBagA
+  :: Bag Unvalidated fields
+  -> BagA fields a
+  -> (Maybe a, Bag ValidLookupResult fields)
+
+runBagA b (BagA k)
+  = runBagF b k
+
+instance Functor (BagA fields) where
+  fmap f (BagA k)
+    = BagA (fmapBagF f k)
+
+instance Applicative (BagA fields) where
+  pure
+    = BagA . pureBagF
+
+  BagA kf <*> BagA kx
+    = BagA $ \s ->
+        let (mf, s')  = kf s
+            (mx, s'') = kx s'
+
+        in  (mf <*> mx, s'')
+
+lookupValid
+  :: forall name fields ty.
+     (HasField fields name ty,
+      Valid ty)
+
+  => BagA fields ty
+
+lookupValid
+  = BagA $ \s ->
+      case lookup @name (_bsRead s) of
+        Nothing ->
+          (Nothing, writeResult @name MissingField s)
+        Just (Unvalidated x) ->
+          case validatePlain x of
+            Failure e ->
+              (Nothing, writeResult @name (InvalidField (x, e)) s)
+            Success y ->
+              (Just y, writeResult @name (ValidField y) s)
+
+newtype BagM fields a
+  = BagM { _runBagM :: BagF fields a }
+
+runBagM
+  :: Bag Unvalidated fields
+  -> BagM fields a
+  -> (Maybe a, Bag ValidLookupResult fields)
+
+runBagM b (BagM k)
+  = runBagF b k
+
+instance Functor (BagM fields) where
+  fmap f (BagM k)
+    = BagM (fmapBagF f k)
+
+instance Applicative (BagM fields) where
+  pure
+    = return
+  (<*>)
+    = ap
+
+instance Monad (BagM fields) where
+  return
+    = BagM . pureBagF
+  BagM k >>= f
+    = BagM $ \s ->
+        let (mx, s') = k s
+        in  case mx of
+              Nothing ->
+                (Nothing, s')
+              Just x ->
+                _runBagM (f x) s'
+
+independently :: BagA fields a -> BagM fields a
+independently (BagA k)
+  = BagM k
+
+lookupValidMaybe
+  :: forall name fields ty.
+     (HasField fields name ty,
+      Valid ty)
+
+  => BagM fields (Maybe ty)
+
+lookupValidMaybe
+  = validLookupResultToMaybe <$> lookupValidResult @name
+
+lookupValidResult
+  :: forall name fields ty.
+     (HasField fields name ty,
+      Valid ty)
+
+  => BagM fields (ValidLookupResult ty)
+
+lookupValidResult
+  = BagM $ \s ->
+      case lookup @name (_bsRead s) of
+        Nothing ->
+          writeAndReturnResult @name MissingField s
+        Just (Unvalidated x) ->
+          case validatePlain x of
+            Failure e ->
+              writeAndReturnResult @name (InvalidField (x, e)) s
+            Success y ->
+              writeAndReturnResult @name (ValidField y) s
+
+writeAndReturnResult
+  :: forall name fields ty.
+     HasField fields name ty
+  => ValidLookupResult ty
+  -> BagState fields
+  -> (Maybe (ValidLookupResult ty), BagState fields)
+
+writeAndReturnResult r s
+  = (Just r, writeResult @name r s)
