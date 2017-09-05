@@ -1,8 +1,12 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE KindSignatures  #-}
 {-# LANGUAGE LambdaCase      #-}
+{-# LANGUAGE PolyKinds       #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module Form
-  ( FormField (..)
+  ( FormField --(..)
 
   , QuestionKey (..)
 
@@ -14,10 +18,23 @@ module Form
   , renderQuestion
   ) where
 
+{-
 import Atomic
+import Paths
 
+import GHC.TypeLits
+-}
+
+class FormField fks dks where
+
+{-
+instance FormField '[
+ -}
+
+{-
 class Valid a => FormField a where
   toFormField :: ValidLookupResult a -> [Question]
+  -}
 
 newtype QuestionKey
   = QuestionKey { _questionKeyString :: String }

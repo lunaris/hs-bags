@@ -21,15 +21,11 @@ module Atomic
 
   , insertPlain
 
-  , BagA
-  , runBagA
+  , Builder
+  , runBuilder
+  , andThen
+  , requireValid
   , lookupValid
-
-  , BagM
-  , runBagM
-  , independently
-  , lookupValidMaybe
-  , lookupValidResult
   ) where
 
 import Operations
@@ -114,8 +110,8 @@ insertPlain
 insertPlain
   = insert @name . Unvalidated
 
-type BagF fields a
-  = BagState fields -> (Maybe a, BagState fields)
+newtype Builder fields a
+  = Builder { _runBuilder :: BagState fields -> (Maybe a, BagState fields) }
 
 data BagState fields
   = BagState
@@ -123,24 +119,16 @@ data BagState fields
       , _bsWrite :: Bag ValidLookupResult fields
       }
 
-runBagF
+runBuilder
   :: Bag Unvalidated fields
-  -> BagF fields a
+  -> Builder fields a
   -> (Maybe a, Bag ValidLookupResult fields)
 
-runBagF b k
+runBuilder b (Builder k)
   = let s         = BagState b empty
         (mx, s')  = k s
 
     in  (mx, _bsWrite s')
-
-fmapBagF :: (a -> b) -> BagF fields a -> BagF fields b
-fmapBagF f k
-  = \s -> let (mx, s') = k s in (fmap f mx, s')
-
-pureBagF :: a -> s -> (Maybe a, s)
-pureBagF
-  = (,) . Just
 
 writeResult
   :: forall name fields ty.
@@ -152,41 +140,49 @@ writeResult
 writeResult r s
   = s { _bsWrite = insert @name r (_bsWrite s) }
 
-newtype BagA fields a
-  = BagA { _runBagA :: BagF fields a }
+writeAndReturnResult
+  :: forall name fields ty.
+     HasField fields name ty
+  => ValidLookupResult ty
+  -> BagState fields
+  -> (Maybe (ValidLookupResult ty), BagState fields)
 
-runBagA
-  :: Bag Unvalidated fields
-  -> BagA fields a
-  -> (Maybe a, Bag ValidLookupResult fields)
+writeAndReturnResult r s
+  = (Just r, writeResult @name r s)
 
-runBagA b (BagA k)
-  = runBagF b k
+instance Functor (Builder fields) where
+  fmap f (Builder k)
+    = Builder (\s -> let (mx, s') = k s in (fmap f mx, s'))
 
-instance Functor (BagA fields) where
-  fmap f (BagA k)
-    = BagA (fmapBagF f k)
-
-instance Applicative (BagA fields) where
+instance Applicative (Builder fields) where
   pure
-    = BagA . pureBagF
+    = Builder . (,) . Just
 
-  BagA kf <*> BagA kx
-    = BagA $ \s ->
+  Builder kf <*> Builder kx
+    = Builder $ \s ->
         let (mf, s')  = kf s
             (mx, s'') = kx s'
 
         in  (mf <*> mx, s'')
 
-lookupValid
+andThen :: Builder fields a -> (a -> Builder fields b) -> Builder fields b
+andThen (Builder k) h
+  = Builder $ \s ->
+      case k s of
+        (Nothing, s') ->
+          (Nothing, s')
+        (Just x, s') ->
+          _runBuilder (h x) s'
+
+requireValid
   :: forall name fields ty.
      (HasField fields name ty,
       Valid ty)
 
-  => BagA fields ty
+  => Builder fields ty
 
-lookupValid
-  = BagA $ \s ->
+requireValid
+  = Builder $ \s ->
       case lookup @name (_bsRead s) of
         Nothing ->
           (Nothing, writeResult @name MissingField s)
@@ -197,62 +193,15 @@ lookupValid
             Success y ->
               (Just y, writeResult @name (ValidField y) s)
 
-newtype BagM fields a
-  = BagM { _runBagM :: BagF fields a }
-
-runBagM
-  :: Bag Unvalidated fields
-  -> BagM fields a
-  -> (Maybe a, Bag ValidLookupResult fields)
-
-runBagM b (BagM k)
-  = runBagF b k
-
-instance Functor (BagM fields) where
-  fmap f (BagM k)
-    = BagM (fmapBagF f k)
-
-instance Applicative (BagM fields) where
-  pure
-    = return
-  (<*>)
-    = ap
-
-instance Monad (BagM fields) where
-  return
-    = BagM . pureBagF
-  BagM k >>= f
-    = BagM $ \s ->
-        let (mx, s') = k s
-        in  case mx of
-              Nothing ->
-                (Nothing, s')
-              Just x ->
-                _runBagM (f x) s'
-
-independently :: BagA fields a -> BagM fields a
-independently (BagA k)
-  = BagM k
-
-lookupValidMaybe
+lookupValid
   :: forall name fields ty.
      (HasField fields name ty,
       Valid ty)
 
-  => BagM fields (Maybe ty)
+  => Builder fields (ValidLookupResult ty)
 
-lookupValidMaybe
-  = validLookupResultToMaybe <$> lookupValidResult @name
-
-lookupValidResult
-  :: forall name fields ty.
-     (HasField fields name ty,
-      Valid ty)
-
-  => BagM fields (ValidLookupResult ty)
-
-lookupValidResult
-  = BagM $ \s ->
+lookupValid
+  = Builder $ \s ->
       case lookup @name (_bsRead s) of
         Nothing ->
           writeAndReturnResult @name MissingField s
@@ -262,13 +211,3 @@ lookupValidResult
               writeAndReturnResult @name (InvalidField (x, e)) s
             Success y ->
               writeAndReturnResult @name (ValidField y) s
-
-writeAndReturnResult
-  :: forall name fields ty.
-     HasField fields name ty
-  => ValidLookupResult ty
-  -> BagState fields
-  -> (Maybe (ValidLookupResult ty), BagState fields)
-
-writeAndReturnResult r s
-  = (Just r, writeResult @name r s)

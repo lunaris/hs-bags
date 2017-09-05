@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -25,6 +26,8 @@ type PersonFields
   = '[ Field "Name" Name
      , Field "Age"  Age
      , Field "Pet"  PetFields
+     , Field "Blue" Bool
+     , Field "Red"  Bool
      ]
 
 type PetFields
@@ -47,27 +50,6 @@ instance Valid Name where
         s  -> Success (Name s)
   unvalidateValid
     = _nameString
-
-instance FormField Name where
-  toFormField result
-    = [ TextQ TextQuestion
-          { _tqKey      = QuestionKey "Name"
-          , _tqQuestion = "What is your name?"
-          , _tqValue    = value
-          , _tqError    = err
-          }
-
-      ]
-
-    where
-      (value, err)
-        = case result of
-            MissingField ->
-              (Nothing, Just "Please tell us your name")
-            InvalidField (v, e) ->
-              (Just (show v), Just e)
-            ValidField v ->
-              (Just (show (unvalidateValid v)), Nothing)
 
 newtype Age
   = Age { _ageInt :: Int }
@@ -92,16 +74,52 @@ b2 = insertPlain @"Age" 30 b1
 b3 = insertPlain @"Age" (-2) b1
 b4 = insertPlain @("Pet" // "Name") "Fido" b2
 
-{-
-c1 :: BagM PersonFields (Either (Name, Age) String)
+c1 :: Builder PersonFields Age
 c1
-  = do
-      (name, age) <- independently $
-        (,) <$> lookupValid @"Name" <*> lookupValid @"Age"
+  = (   (,,)
+    <$> requireValid @"Name"
+    <*> requireValid @"Age"
+    <*> lookupValid @("Pet" // "Name")
+    )
 
-      maybePetName <- lookupValidMaybe @("Pet" // "Name")
-      -}
+    `andThen` \(_name, age, petNameResult) ->
+      case petNameResult of
+        MissingField ->
+          pure age
+        InvalidField _ ->
+          pure age
+        ValidField _petName ->
+          requireValid @("Pet" // "Age")
 
+{-
+instance FormField '["Red", "Blue"] where
+  toFormField _red _blue
+  -}
+
+{-
+instance FormField Name where
+  toFormField result
+    = [ TextQ TextQuestion
+          { _tqKey      = QuestionKey "Name"
+          , _tqQuestion = "What is your name?"
+          , _tqValue    = value
+          , _tqError    = err
+          }
+
+      ]
+
+    where
+      (value, err)
+        = case result of
+            MissingField ->
+              (Nothing, Just "Please tell us your name")
+            InvalidField (v, e) ->
+              (Just (show v), Just e)
+            ValidField v ->
+              (Just (show (unvalidateValid v)), Nothing)
+              -}
+
+{-
 instance FormField Age where
   toFormField result
     = [ TextQ TextQuestion
@@ -122,3 +140,4 @@ instance FormField Age where
               (Just (show v), Just e)
             ValidField v ->
               (Just (show (unvalidateValid v)), Nothing)
+              -}
