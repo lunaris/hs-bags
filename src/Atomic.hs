@@ -24,6 +24,7 @@ module Atomic
   , Builder
   , runBuilder
   , andThen
+  , validateComposite
   , requireValid
   , lookupValid
   ) where
@@ -33,8 +34,9 @@ import Types
 import Validation
 
 import Control.Monad
-import Data.Aeson    hiding (Result(..))
-import Prelude       hiding (lookup)
+import Data.Aeson            hiding (Result(..))
+import Data.Functor.Identity
+import Prelude               hiding (lookup)
 
 class Valid a where
   type Plain a      :: *
@@ -110,51 +112,68 @@ insertPlain
 insertPlain
   = insert @name . Unvalidated
 
-newtype Builder fields a
-  = Builder { _runBuilder :: BagState fields -> (Maybe a, BagState fields) }
+newtype Builder fields composites a
+  = Builder
+      { _runBuilder
+          :: BagState fields composites
+          -> (Maybe a, BagState fields composites)
 
-data BagState fields
+      }
+
+data BagState fields composites
   = BagState
-      { _bsRead  :: Bag Unvalidated fields
-      , _bsWrite :: Bag ValidLookupResult fields
+      { _bsUnvalidated :: Bag Unvalidated fields
+      , _bsLookups     :: Bag ValidLookupResult fields
+      , _bsComposites  :: Bag Identity composites
       }
 
 runBuilder
-  :: Bag Unvalidated fields
-  -> Builder fields a
-  -> (Maybe a, Bag ValidLookupResult fields)
+  :: forall fields composites a.
+     Bag Unvalidated fields
+  -> Builder fields composites a
+  -> (Maybe a, Bag ValidLookupResult fields, Bag Identity composites)
 
 runBuilder b (Builder k)
-  = let s         = BagState b empty
+  = let s         = BagState b empty empty
         (mx, s')  = k s
 
-    in  (mx, _bsWrite s')
+    in  (mx, _bsLookups s', _bsComposites s')
 
-writeResult
-  :: forall name fields ty.
+writeLookupResult
+  :: forall name fields composites ty.
      HasField fields name ty
   => ValidLookupResult ty
-  -> BagState fields
-  -> BagState fields
+  -> BagState fields composites
+  -> BagState fields composites
 
-writeResult r s
-  = s { _bsWrite = insert @name r (_bsWrite s) }
+writeLookupResult r s
+  = s { _bsLookups = insert @name r (_bsLookups s) }
 
-writeAndReturnResult
-  :: forall name fields ty.
+writeAndReturnLookupResult
+  :: forall name fields composites ty.
      HasField fields name ty
   => ValidLookupResult ty
-  -> BagState fields
-  -> (Maybe (ValidLookupResult ty), BagState fields)
+  -> BagState fields composites
+  -> (Maybe (ValidLookupResult ty), BagState fields composites)
 
-writeAndReturnResult r s
-  = (Just r, writeResult @name r s)
+writeAndReturnLookupResult r s
+  = (Just r, writeLookupResult @name r s)
 
-instance Functor (Builder fields) where
+writeCompositeResult
+  :: forall name fields composites err.
+     HasField composites name err
+  => err
+  -> BagState fields composites
+  -> BagState fields composites
+
+writeCompositeResult e s
+  = s { _bsComposites = insertValue @name e (_bsComposites s) }
+
+instance Functor (Builder fields composites) where
   fmap f (Builder k)
     = Builder (\s -> let (mx, s') = k s in (fmap f mx, s'))
 
-instance Applicative (Builder fields) where
+instance Applicative (Builder fields composites) where
   pure
     = Builder . (,) . Just
 
@@ -165,7 +184,11 @@ instance Applicative (Builder fields) where
 
         in  (mf <*> mx, s'')
 
-andThen :: Builder fields a -> (a -> Builder fields b) -> Builder fields b
+andThen
+  :: Builder fields composites a
+  -> (a -> Builder fields composites b)
+  -> Builder fields composites b
+
 andThen (Builder k) h
   = Builder $ \s ->
       case k s of
@@ -174,40 +197,54 @@ andThen (Builder k) h
         (Just x, s') ->
           _runBuilder (h x) s'
 
+validateComposite
+  :: forall name fields composites e ty.
+     HasField composites name e
+  => Validation e ty
+  -> Builder fields composites ty
+
+validateComposite v
+  = Builder $ \s ->
+      case v of
+        Failure e ->
+          (Nothing, writeCompositeResult @name e s)
+        Success x ->
+          (Just x, s)
+
 requireValid
-  :: forall name fields ty.
+  :: forall name fields composites ty.
      (HasField fields name ty,
       Valid ty)
 
-  => Builder fields ty
+  => Builder fields composites ty
 
 requireValid
   = Builder $ \s ->
-      case lookup @name (_bsRead s) of
+      case lookup @name (_bsUnvalidated s) of
         Nothing ->
-          (Nothing, writeResult @name MissingField s)
+          (Nothing, writeLookupResult @name MissingField s)
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              (Nothing, writeResult @name (InvalidField (x, e)) s)
+              (Nothing, writeLookupResult @name (InvalidField (x, e)) s)
             Success y ->
-              (Just y, writeResult @name (ValidField y) s)
+              (Just y, writeLookupResult @name (ValidField y) s)
 
 lookupValid
-  :: forall name fields ty.
+  :: forall name fields composites ty.
      (HasField fields name ty,
       Valid ty)
 
-  => Builder fields (ValidLookupResult ty)
+  => Builder fields composites (ValidLookupResult ty)
 
 lookupValid
   = Builder $ \s ->
-      case lookup @name (_bsRead s) of
+      case lookup @name (_bsUnvalidated s) of
         Nothing ->
-          writeAndReturnResult @name MissingField s
+          writeAndReturnLookupResult @name MissingField s
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              writeAndReturnResult @name (InvalidField (x, e)) s
+              writeAndReturnLookupResult @name (InvalidField (x, e)) s
             Success y ->
-              writeAndReturnResult @name (ValidField y) s
+              writeAndReturnLookupResult @name (ValidField y) s

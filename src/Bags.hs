@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -26,8 +27,6 @@ type PersonFields
   = '[ Field "Name" Name
      , Field "Age"  Age
      , Field "Pet"  PetFields
-     , Field "Blue" Bool
-     , Field "Red"  Bool
      ]
 
 type PetFields
@@ -35,9 +34,26 @@ type PetFields
      , Field "Age"  Age
      ]
 
+type PersonComposites
+  = '[ Field "NameAge" (Either String String)
+     ]
+
+data PersonFormContext
+  = PersonFormContext
+
+instance FormContext PersonFormContext where
+  type FormFields PersonFormContext
+    = PersonFields
+  type FormComposites PersonFormContext
+    = PersonComposites
+
+instance FormField PersonFormContext "Name" '["NameAge", "NameAge"] where
+  toFormField
+    = undefined
+
 newtype Name
   = Name { _nameString :: String }
-  deriving (Show, ToJSON)
+  deriving (Eq, Show, ToJSON)
 
 instance Valid Name where
   type Plain Name
@@ -53,7 +69,7 @@ instance Valid Name where
 
 newtype Age
   = Age { _ageInt :: Int }
-  deriving (Show, ToJSON)
+  deriving (Eq, Show, ToJSON)
 
 instance Valid Age where
   type Plain Age
@@ -74,7 +90,21 @@ b2 = insertPlain @"Age" 30 b1
 b3 = insertPlain @"Age" (-2) b1
 b4 = insertPlain @("Pet" // "Name") "Fido" b2
 
-c1 :: Builder PersonFields Age
+data Person
+  = Person
+      { _pName :: Name
+      , _pAge  :: Age
+      }
+
+  deriving (Eq, Show)
+
+mkPerson :: Name -> Age -> Validation (Either String String) Person
+mkPerson n a
+  | n == Name "Will" = Failure (Left "Bad name")
+  | a == Age 30      = Failure (Right "Bad age")
+  | otherwise        = Success (Person n a)
+
+c1 :: Builder PersonFields PersonComposites Age
 c1
   = (   (,,)
     <$> requireValid @"Name"

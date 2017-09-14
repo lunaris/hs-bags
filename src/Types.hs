@@ -12,6 +12,7 @@
 module Types
   ( Bag (..)
   , Field
+  , HasFields
   , HasField
 
   , FieldAssocs
@@ -31,8 +32,28 @@ newtype Bag f (fields :: [*])
 
 data Field (name :: Symbol) ty
 
+class HasFields (fields :: [*]) (paths :: [k]) (tys :: [*]) | fields paths -> tys
+
+instance (All Typeable tys,
+          LookupAll fields paths ~ maybeTys,
+          maybeTys ~ 'Just tys)
+
+      =>  HasFields (fields :: [*]) (paths :: [k]) (tys :: [*])
+
+type family LookupAll (fields :: [*]) (paths :: [k]) :: Maybe [*] where
+  LookupAll fields (path ': paths)
+    = LiftConsMaybe (Lookup fields path) (LookupAll fields paths)
+  LookupAll fields '[]
+    = 'Just '[]
+
+type family LiftConsMaybe (a :: Maybe k) (as :: Maybe [k]) :: Maybe [k] where
+  LiftConsMaybe ('Just a) ('Just as)
+    = 'Just (a ': as)
+  LiftConsMaybe _ _
+    = 'Nothing
+
 class (All KnownSymbol (PathNames path), Typeable ty)
-  =>  HasField (fields :: [*]) (path :: k) (ty :: *) | fields path -> ty where
+  =>  HasField (fields :: [*]) (path :: k) (ty :: *) | fields path -> ty
 
 instance (All KnownSymbol (PathNames path),
           Typeable ty,
@@ -40,7 +61,7 @@ instance (All KnownSymbol (PathNames path),
           maybeTy ~ 'Just ty,
           ErrorWhenNothing fields path maybeTy)
 
-      =>  HasField (fields :: [*]) (path :: k) (ty :: *) where
+      =>  HasField (fields :: [*]) (path :: k) (ty :: *)
 
 type family Lookup (fields :: [*]) (path :: k) :: Maybe * where
   Lookup (Field name fields ': _) ('Node name path)

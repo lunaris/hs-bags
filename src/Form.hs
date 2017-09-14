@@ -1,12 +1,16 @@
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE KindSignatures        #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DataKinds       #-}
-{-# LANGUAGE KindSignatures  #-}
-{-# LANGUAGE LambdaCase      #-}
-{-# LANGUAGE PolyKinds       #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PolyKinds             #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TypeFamilies          #-}
 
 module Form
-  ( FormField --(..)
+  ( FormContext (..)
+  , FormField (..)
 
   , QuestionKey (..)
 
@@ -18,14 +22,24 @@ module Form
   , renderQuestion
   ) where
 
-{-
 import Atomic
-import Paths
+import HList
+import Types
 
-import GHC.TypeLits
--}
+import Data.Functor.Identity
 
-class FormField fks dks where
+class FormContext ctx where
+  type FormFields ctx :: [*]
+  type FormComposites ctx :: [*]
+
+class FormContext ctx => FormField ctx fieldName compositeNames where
+  toFormField
+    :: (HasField (FormFields ctx) fieldName fieldTy,
+        HasFields (FormComposites ctx) compositeNames compTys)
+
+    => ctx
+    -> ValidLookupResult fieldTy
+    -> UncurryF Identity compTys ()
 
 {-
 instance FormField '[
