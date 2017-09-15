@@ -5,7 +5,9 @@
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PolyKinds            #-}
 {-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
@@ -13,7 +15,8 @@
 
 module Paths
   ( Path (..)
-  , type (//)
+  , p
+  , ps
 
   , PathNames
   , NamesPath
@@ -22,42 +25,89 @@ module Paths
 
 import All
 
-import qualified Data.Text    as Tx
+import qualified Data.Text                 as Tx
 import           GHC.TypeLits
+import qualified Language.Haskell.TH       as TH
+import qualified Language.Haskell.TH.Quote as TH.Q
 
-data Path name
-  = Leaf name
-  | Node name (Path name)
+data Path
+  = Leaf Symbol
+  | Node Symbol Path
 
-type family (//) (name :: Symbol) (path :: k) :: Path Symbol where
-  name // leaf
-    = 'Node name ('Leaf leaf)
-  name // path
-    = 'Node name path
-  name // path
-    = TypeError
-        (     'Text "The type "
-        ':<>: 'ShowType path
-        ':<>: 'Text " is neither a Symbol nor a Path Symbol"
-        )
+p :: TH.Q.QuasiQuoter
+p
+  = TH.Q.QuasiQuoter
+      { quoteExp  = fail "The [p| ... |] quasiquoter cannot be used in an expression context"
+      , quotePat  = fail "The [p| ... |] quasiquoter cannot be used in a pattern context"
+      , quoteType = quoteTypeP
+      , quoteDec  = fail "The [p| ... |] quasiquoter cannot be used in a declaration context"
+      }
 
-infixr 5 //
+quoteTypeP :: String -> TH.TypeQ
+quoteTypeP
+  = foldr1Splits nodeQ leafQ '/' . trim
+  where
+    symbolQ
+      = TH.litT . TH.strTyLit
+    leafQ name
+      = TH.appT (TH.conT 'Leaf) (symbolQ name)
+    nodeQ name
+      = TH.appT (TH.appT (TH.conT 'Node) (symbolQ name))
 
-type family PathNames (path :: k) :: [Symbol] where
-  PathNames name
-    = '[name]
+ps :: TH.Q.QuasiQuoter
+ps
+  = TH.Q.QuasiQuoter
+      { quoteExp  = fail "The [ps| ... |] quasiquoter cannot be used in an expression context"
+      , quotePat  = fail "The [ps| ... |] quasiquoter cannot be used in a pattern context"
+      , quoteType = quoteTypePs
+      , quoteDec  = fail "The [ps| ... |] quasiquoter cannot be used in a declaration context"
+      }
+
+quoteTypePs :: String -> TH.TypeQ
+quoteTypePs
+  = foldr1Splits consQ singQ ',' . trim
+  where
+    singQ path
+      = TH.appT (TH.appT TH.promotedConsT (pathQ path)) TH.promotedNilT
+    consQ path
+      = TH.appT (TH.appT TH.promotedConsT (pathQ path))
+
+    pathQ
+      = foldr1Splits nodeQ leafQ '/' . trim
+
+    symbolQ
+      = TH.litT . TH.strTyLit
+    leafQ name
+      = TH.appT (TH.conT 'Leaf) (symbolQ name)
+    nodeQ name
+      = TH.appT (TH.appT (TH.conT 'Node) (symbolQ name))
+
+trim :: String -> String
+trim
+  = k . k
+  where
+    k = reverse . dropWhile (== ' ')
+
+foldr1Splits :: (String -> a -> a) -> (String -> a) -> Char -> String -> a
+foldr1Splits fInits fLast c
+  = foldr1Splits' . breakOnSep
+  where
+    breakOnSep
+      = break (== c)
+    dropSep
+      = drop 1
+
+    foldr1Splits' (s1, s2)
+      | null s2   = fLast s1
+      | otherwise = fInits s1 (foldr1Splits' (breakOnSep (dropSep s2)))
+
+type family PathNames (path :: Path) :: [Symbol] where
   PathNames ('Leaf name)
     = '[name]
   PathNames ('Node name path)
     = name ': PathNames path
-  PathNames path
-    = TypeError
-        (     'Text "The type "
-        ':<>: 'ShowType path
-        ':<>: 'Text " is neither a Symbol nor a Path Symbol"
-        )
 
-type family NamesPath (names :: [Symbol]) :: Path Symbol where
+type family NamesPath (names :: [Symbol]) :: Path where
   NamesPath '[name]
     = 'Leaf name
   NamesPath (name ': names)

@@ -26,8 +26,8 @@ import All
 import Paths
 
 import           Data.Dynamic
-import qualified Data.Map.Strict as M
-import qualified Data.Text       as Tx
+import qualified Data.Map.Strict           as M
+import qualified Data.Text                 as Tx
 import           GHC.Exts
 import           GHC.TypeLits
 
@@ -36,7 +36,7 @@ newtype Bag f (keys :: [*])
 
 data Key (name :: Symbol) ty
 
-class HasKeys' (keys :: [*]) (paths :: [k]) where
+class HasKeys' (keys :: [*]) (paths :: [Path]) where
   type KeysTypes keys paths :: [*]
 
 instance (All Typeable tys,
@@ -44,19 +44,19 @@ instance (All Typeable tys,
           maybeTys ~ 'Just tys,
           ErrorWhenNoTypes keys paths maybeTys)
 
-      =>  HasKeys' (keys :: [*]) (paths :: [k]) where
+      =>  HasKeys' (keys :: [*]) (paths :: [Path]) where
 
   type KeysTypes keys paths
     = FromJust (LookupAll keys paths)
 
-class HasKeys (keys :: [*]) (paths :: [k]) (tys :: [*]) | keys paths -> tys
+class HasKeys (keys :: [*]) (paths :: [Path]) (tys :: [*]) | keys paths -> tys
 
 instance (HasKeys' keys paths,
           KeysTypes keys paths ~ tys)
 
-      =>  HasKeys (keys :: [*]) (paths :: [k]) (tys :: [*])
+      =>  HasKeys (keys :: [*]) (paths :: [Path]) (tys :: [*])
 
-type family LookupAll (keys :: [*]) (paths :: [k]) :: Maybe [*] where
+type family LookupAll (keys :: [*]) (paths :: [Path]) :: Maybe [*] where
   LookupAll keys (path ': paths)
     = LiftConsMaybe (Lookup keys path) (LookupAll keys paths)
   LookupAll keys '[]
@@ -68,18 +68,18 @@ type family LiftConsMaybe (a :: Maybe k) (as :: Maybe [k]) :: Maybe [k] where
   LiftConsMaybe _ _
     = 'Nothing
 
-type family ErrorWhenNoTypes keys (paths :: [k]) (maybeTys :: Maybe [*]) :: Constraint where
+type family ErrorWhenNoTypes keys (paths :: [Path]) (maybeTys :: Maybe [*]) :: Constraint where
   ErrorWhenNoTypes _ _ ('Just _)
     = ()
   ErrorWhenNoTypes keys paths 'Nothing
     = TypeError
         (     'Text "The keys: "
-        ':<>: PathsError ('Text "  ") paths
-        ':<>: 'Text " could not be found. The available keys are:"
+        ':$$: PathsError ('Text "  ") paths
+        ':$$: 'Text " could not be found. The available keys are:"
         ':$$: KeyNamesError ('Text "  ") keys
         )
 
-type family PathsError (prefix :: ErrorMessage) (paths :: [k]) :: ErrorMessage where
+type family PathsError (prefix :: ErrorMessage) (paths :: [Path]) :: ErrorMessage where
   PathsError prefix '[path]
     =     prefix
     ':<>: PathError path
@@ -91,7 +91,7 @@ type family PathsError (prefix :: ErrorMessage) (paths :: [k]) :: ErrorMessage w
 class (All KnownSymbol (PathNames path),
        Typeable (KeyType keys path))
 
-    => HasKey' (keys :: [*]) (path :: k) where
+    => HasKey' (keys :: [*]) (path :: Path) where
 
   type KeyType keys path :: *
 
@@ -101,20 +101,20 @@ instance (All KnownSymbol (PathNames path),
           maybeTy ~ 'Just ty,
           ErrorWhenNoType keys path maybeTy)
 
-      =>  HasKey' (keys :: [*]) (path :: k) where
+      =>  HasKey' (keys :: [*]) (path :: Path) where
 
   type KeyType keys path
     = FromJust (Lookup keys path)
 
 class (All KnownSymbol (PathNames path), Typeable ty)
-    => HasKey (keys :: [*]) (path :: k) (ty :: *) | keys path -> ty
+    => HasKey (keys :: [*]) (path :: Path) (ty :: *) | keys path -> ty
 
 instance (All KnownSymbol (PathNames path),
           Typeable ty,
           HasKey' keys path,
           KeyType keys path ~ ty)
 
-      =>  HasKey (keys :: [*]) (path :: k) (ty :: *)
+      =>  HasKey (keys :: [*]) (path :: Path) (ty :: *)
 
 type family Lookup (keys :: [*]) (path :: k) :: Maybe * where
   Lookup (Key name keys ': _) ('Node name path)
@@ -128,7 +128,7 @@ type family Lookup (keys :: [*]) (path :: k) :: Maybe * where
   Lookup '[] _
     = 'Nothing
 
-type family ErrorWhenNoType keys (path :: k) (maybeTy :: Maybe *) :: Constraint where
+type family ErrorWhenNoType keys (path :: Path) (maybeTy :: Maybe *) :: Constraint where
   ErrorWhenNoType _ _ ('Just _)
     = ()
   ErrorWhenNoType keys path 'Nothing
@@ -180,11 +180,11 @@ type family FromJust (a :: Maybe k) :: k where
   FromJust ('Just a)
     = a
 
-type family KeyAssocs (f :: * -> *) (keys :: [*]) :: [(Path Symbol, *)] where
+type family KeyAssocs (f :: * -> *) (keys :: [*]) :: [(Path, *)] where
   KeyAssocs f keys
     = KeyAssocs' f '[] keys
 
-type family KeyAssocs' (f :: * -> *) (path :: [Symbol]) (keys :: [*]) :: [(Path Symbol, *)] where
+type family KeyAssocs' (f :: * -> *) (path :: [Symbol]) (keys :: [*]) :: [(Path, *)] where
   KeyAssocs' f path (Key name subkeys ': keys)
     =  KeyAssocs' f (name ': path) subkeys
     ++ KeyAssocs' f path keys

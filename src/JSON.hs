@@ -36,7 +36,7 @@ class (All KnownSymbol (PathNames (Fst keyAssoc)),
        Typeable (Snd keyAssoc),
        ToJSON (Snd keyAssoc))
 
-    => KeyAssocToJSON (keyAssoc :: (Path Symbol, *)) where
+    => KeyAssocToJSON (keyAssoc :: (Path, *)) where
 
   keyAssocValue :: Tx.Text -> Dynamic -> Proxy keyAssoc -> First Value
 
@@ -44,7 +44,7 @@ instance (All KnownSymbol (PathNames (Fst keyAssoc)),
           Typeable (Snd keyAssoc),
           ToJSON (Snd keyAssoc))
 
-      =>  KeyAssocToJSON (keyAssoc :: (Path Symbol, *)) where
+      =>  KeyAssocToJSON (keyAssoc :: (Path, *)) where
 
   keyAssocValue k dyn _
     | pathText @(Fst keyAssoc) == k

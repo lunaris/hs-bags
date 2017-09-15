@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -48,8 +49,8 @@ instance Form PersonForm where
   type FormContextuals PersonForm
     = PersonContextuals
 
-instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
-  toFormField _form result (_nameAge1 :: Maybe (Either String String)) (_nameAge2 :: Maybe (Either String String))
+instance FormField PersonForm [p| Name |] [ps| NameAge, NameAge |] where
+  toFormField _form result _nameAge1 _nameAge2
     = TextQ TextQuestion
         { _tqKey      = QuestionKey "Name"
         , _tqQuestion = "What is your name?"
@@ -62,6 +63,25 @@ instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
         = case result of
             MissingKey ->
               (Nothing, Just "Please tell us your name")
+            InvalidKey (v, e) ->
+              (Just (show v), Just e)
+            ValidKey v ->
+              (Just (show (unvalidateValid v)), Nothing)
+
+instance FormField PersonForm [p| Pet/Name |] [ps| NameAge |] where
+  toFormField _form result _nameAge
+    = TextQ TextQuestion
+        { _tqKey      = QuestionKey "Pet name"
+        , _tqQuestion = "What is your pet's name?"
+        , _tqValue    = value
+        , _tqError    = err
+        }
+
+    where
+      (value, err)
+        = case result of
+            MissingKey ->
+              (Nothing, Just "Please tell us your pet's name")
             InvalidKey (v, e) ->
               (Just (show v), Just e)
             ValidKey v ->
@@ -101,10 +121,10 @@ instance Valid Age where
 b1, b2, b3, b4
   :: Bag Unvalidated PersonFields
 
-b1 = insertPlain @"Name" "Will" empty
-b2 = insertPlain @"Age" 30 b1
-b3 = insertPlain @"Age" (-2) b1
-b4 = insertPlain @("Pet" // "Name") "Fido" b2
+b1 = insertPlain @[p| Name |] "Will" empty
+b2 = insertPlain @[p| Age |] 30 b1
+b3 = insertPlain @[p| Age |] (-2) b1
+b4 = insertPlain @[p| Pet/Name |] "Fido" b2
 
 data Person
   = Person
@@ -123,9 +143,9 @@ mkPerson n a
 c1 :: Builder PersonFields PersonContextuals Age
 c1
   = (   (,,)
-    <$> requireValid @"Name"
-    <*> requireValid @"Age"
-    <*> lookupValid @("Pet" // "Name")
+    <$> requireValid @[p| Name |]
+    <*> requireValid @[p| Age |]
+    <*> lookupValid @[p| Pet/Name |]
     )
 
     `andThen` \(_name, age, petNameResult) ->
@@ -135,55 +155,4 @@ c1
         InvalidKey _ ->
           pure age
         ValidKey _petName ->
-          requireValid @("Pet" // "Age")
-
-{-
-instance FormField '["Red", "Blue"] where
-  toFormField _red _blue
-  -}
-
-{-
-instance FormField Name where
-  toFormField result
-    = [ TextQ TextQuestion
-          { _tqKey      = QuestionKey "Name"
-          , _tqQuestion = "What is your name?"
-          , _tqValue    = value
-          , _tqError    = err
-          }
-
-      ]
-
-    where
-      (value, err)
-        = case result of
-            MissingField ->
-              (Nothing, Just "Please tell us your name")
-            InvalidField (v, e) ->
-              (Just (show v), Just e)
-            ValidField v ->
-              (Just (show (unvalidateValid v)), Nothing)
-              -}
-
-{-
-instance FormField Age where
-  toFormField result
-    = [ TextQ TextQuestion
-          { _tqKey      = QuestionKey "Age"
-          , _tqQuestion = "How old are you?"
-          , _tqValue    = value
-          , _tqError    = err
-          }
-
-      ]
-
-    where
-      (value, err)
-        = case result of
-            MissingField ->
-              (Nothing, Just "Please tell us your age")
-            InvalidField (v, e) ->
-              (Just (show v), Just e)
-            ValidField v ->
-              (Just (show (unvalidateValid v)), Nothing)
-              -}
+          requireValid @[p| Pet/Age |]

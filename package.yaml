@@ -12,6 +12,7 @@ dependencies:
   - base
   - containers
   - mtl
+  - template-haskell
   - text
   - transformers
 
