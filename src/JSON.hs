@@ -32,30 +32,30 @@ type family Snd (t :: (a, b)) :: b where
   Snd '(a, b)
     = b
 
-class (All KnownSymbol (PathNames (Fst fieldAssoc)),
-       Typeable (Snd fieldAssoc),
-       ToJSON (Snd fieldAssoc))
+class (All KnownSymbol (PathNames (Fst keyAssoc)),
+       Typeable (Snd keyAssoc),
+       ToJSON (Snd keyAssoc))
 
-    => FieldAssocToJSON (fieldAssoc :: (Path Symbol, *)) where
+    => KeyAssocToJSON (keyAssoc :: (Path Symbol, *)) where
 
-  fieldAssocValue :: Tx.Text -> Dynamic -> Proxy fieldAssoc -> First Value
+  keyAssocValue :: Tx.Text -> Dynamic -> Proxy keyAssoc -> First Value
 
-instance (All KnownSymbol (PathNames (Fst fieldAssoc)),
-          Typeable (Snd fieldAssoc),
-          ToJSON (Snd fieldAssoc))
+instance (All KnownSymbol (PathNames (Fst keyAssoc)),
+          Typeable (Snd keyAssoc),
+          ToJSON (Snd keyAssoc))
 
-      =>  FieldAssocToJSON (fieldAssoc :: (Path Symbol, *)) where
+      =>  KeyAssocToJSON (keyAssoc :: (Path Symbol, *)) where
 
-  fieldAssocValue k dyn _
-    | pathText @(Fst fieldAssoc) == k
-        = First (toJSON @(Snd fieldAssoc) <$> fromDynamic dyn)
+  keyAssocValue k dyn _
+    | pathText @(Fst keyAssoc) == k
+        = First (toJSON @(Snd keyAssoc) <$> fromDynamic dyn)
     | otherwise
         = First Nothing
 
 bagToJSON
-  :: forall fields f.
-     All FieldAssocToJSON (FieldAssocs f fields)
-  => Bag f fields
+  :: forall keys f.
+     All KeyAssocToJSON (KeyAssocs f keys)
+  => Bag f keys
   -> Value
 
 bagToJSON (Bag m)
@@ -65,4 +65,4 @@ bagToJSON (Bag m)
     f k dyn
       = fromMaybe (error "bagToJSON: Impossible")
       $ getFirst
-      $ withAll @_ @FieldAssocToJSON @(FieldAssocs f fields) (fieldAssocValue k dyn)
+      $ withAll @_ @KeyAssocToJSON @(KeyAssocs f keys) (keyAssocValue k dyn)

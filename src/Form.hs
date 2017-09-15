@@ -1,15 +1,16 @@
-{-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE KindSignatures        #-}
-{-# LANGUAGE LambdaCase            #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE PolyKinds             #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE AllowAmbiguousTypes    #-}
+{-# LANGUAGE DataKinds              #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE KindSignatures         #-}
+{-# LANGUAGE LambdaCase             #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE PolyKinds              #-}
+{-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE TypeFamilies           #-}
 
 module Form
-  ( FormContext (..)
+  ( Form (..)
   , FormField (..)
 
   , QuestionKey (..)
@@ -26,29 +27,20 @@ import Atomic
 import HList
 import Types
 
-import Data.Functor.Identity
+class Form form where
+  type FormFields form      :: [*]
+  type FormContextuals form :: [*]
 
-class FormContext ctx where
-  type FormFields ctx :: [*]
-  type FormComposites ctx :: [*]
+class (Form form,
+       HasKey' (FormFields form) fieldName,
+       HasKeys' (FormContextuals form) contextualNames)
 
-class FormContext ctx => FormField ctx fieldName compositeNames where
+    => FormField form fieldName contextualNames where
+
   toFormField
-    :: (HasField (FormFields ctx) fieldName fieldTy,
-        HasFields (FormComposites ctx) compositeNames compTys)
-
-    => ctx
-    -> ValidLookupResult fieldTy
-    -> UncurryF Identity compTys ()
-
-{-
-instance FormField '[
- -}
-
-{-
-class Valid a => FormField a where
-  toFormField :: ValidLookupResult a -> [Question]
-  -}
+    :: form
+    -> ValidLookupResult (KeyType (FormFields form) fieldName)
+    -> UncurryF Maybe (KeysTypes (FormContextuals form) contextualNames) Question
 
 newtype QuestionKey
   = QuestionKey { _questionKeyString :: String }

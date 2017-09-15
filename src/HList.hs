@@ -27,6 +27,12 @@ type family UncurryF (f :: k -> *) (as :: [k]) (r :: *) :: * where
   UncurryF f '[] r
     = r
 
+type family Uncurry (as :: [*]) (r :: *) :: * where
+  Uncurry (a ': as) r
+    = a -> Uncurry as r
+  Uncurry '[] r
+    = r
+
 class Curried as where
   uncurryHListF :: (HListF f as -> r) -> UncurryF f as r
 

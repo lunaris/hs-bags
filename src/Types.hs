@@ -11,11 +11,15 @@
 
 module Types
   ( Bag (..)
-  , Field
-  , HasFields
-  , HasField
+  , Key
 
-  , FieldAssocs
+  , HasKeys' (..)
+  , HasKeys
+
+  , HasKey' (..)
+  , HasKey
+
+  , KeyAssocs
   ) where
 
 import All
@@ -27,23 +31,35 @@ import qualified Data.Text       as Tx
 import           GHC.Exts
 import           GHC.TypeLits
 
-newtype Bag f (fields :: [*])
+newtype Bag f (keys :: [*])
   = Bag { _bagMap :: M.Map Tx.Text Dynamic }
 
-data Field (name :: Symbol) ty
+data Key (name :: Symbol) ty
 
-class HasFields (fields :: [*]) (paths :: [k]) (tys :: [*]) | fields paths -> tys
+class HasKeys' (keys :: [*]) (paths :: [k]) where
+  type KeysTypes keys paths :: [*]
 
 instance (All Typeable tys,
-          LookupAll fields paths ~ maybeTys,
-          maybeTys ~ 'Just tys)
+          LookupAll keys paths ~ maybeTys,
+          maybeTys ~ 'Just tys,
+          ErrorWhenNoTypes keys paths maybeTys)
 
-      =>  HasFields (fields :: [*]) (paths :: [k]) (tys :: [*])
+      =>  HasKeys' (keys :: [*]) (paths :: [k]) where
 
-type family LookupAll (fields :: [*]) (paths :: [k]) :: Maybe [*] where
-  LookupAll fields (path ': paths)
-    = LiftConsMaybe (Lookup fields path) (LookupAll fields paths)
-  LookupAll fields '[]
+  type KeysTypes keys paths
+    = FromJust (LookupAll keys paths)
+
+class HasKeys (keys :: [*]) (paths :: [k]) (tys :: [*]) | keys paths -> tys
+
+instance (HasKeys' keys paths,
+          KeysTypes keys paths ~ tys)
+
+      =>  HasKeys (keys :: [*]) (paths :: [k]) (tys :: [*])
+
+type family LookupAll (keys :: [*]) (paths :: [k]) :: Maybe [*] where
+  LookupAll keys (path ': paths)
+    = LiftConsMaybe (Lookup keys path) (LookupAll keys paths)
+  LookupAll keys '[]
     = 'Just '[]
 
 type family LiftConsMaybe (a :: Maybe k) (as :: Maybe [k]) :: Maybe [k] where
@@ -52,39 +68,79 @@ type family LiftConsMaybe (a :: Maybe k) (as :: Maybe [k]) :: Maybe [k] where
   LiftConsMaybe _ _
     = 'Nothing
 
-class (All KnownSymbol (PathNames path), Typeable ty)
-  =>  HasField (fields :: [*]) (path :: k) (ty :: *) | fields path -> ty
+type family ErrorWhenNoTypes keys (paths :: [k]) (maybeTys :: Maybe [*]) :: Constraint where
+  ErrorWhenNoTypes _ _ ('Just _)
+    = ()
+  ErrorWhenNoTypes keys paths 'Nothing
+    = TypeError
+        (     'Text "The keys: "
+        ':<>: PathsError ('Text "  ") paths
+        ':<>: 'Text " could not be found. The available keys are:"
+        ':$$: KeyNamesError ('Text "  ") keys
+        )
+
+type family PathsError (prefix :: ErrorMessage) (paths :: [k]) :: ErrorMessage where
+  PathsError prefix '[path]
+    =     prefix
+    ':<>: PathError path
+  PathsError prefix (path ': paths)
+    =     prefix
+    ':<>: PathError path
+    ':$$: PathsError prefix paths
+
+class (All KnownSymbol (PathNames path),
+       Typeable (KeyType keys path))
+
+    => HasKey' (keys :: [*]) (path :: k) where
+
+  type KeyType keys path :: *
 
 instance (All KnownSymbol (PathNames path),
           Typeable ty,
-          Lookup fields path ~ maybeTy,
+          Lookup keys path ~ maybeTy,
           maybeTy ~ 'Just ty,
-          ErrorWhenNothing fields path maybeTy)
+          ErrorWhenNoType keys path maybeTy)
 
-      =>  HasField (fields :: [*]) (path :: k) (ty :: *)
+      =>  HasKey' (keys :: [*]) (path :: k) where
 
-type family Lookup (fields :: [*]) (path :: k) :: Maybe * where
-  Lookup (Field name fields ': _) ('Node name path)
-    = Lookup fields path
-  Lookup (Field name ty ': _) ('Leaf name)
+  type KeyType keys path
+    = FromJust (Lookup keys path)
+
+class (All KnownSymbol (PathNames path), Typeable ty)
+    => HasKey (keys :: [*]) (path :: k) (ty :: *) | keys path -> ty
+
+instance (All KnownSymbol (PathNames path),
+          Typeable ty,
+          HasKey' keys path,
+          KeyType keys path ~ ty)
+
+      =>  HasKey (keys :: [*]) (path :: k) (ty :: *)
+
+type family Lookup (keys :: [*]) (path :: k) :: Maybe * where
+  Lookup (Key name keys ': _) ('Node name path)
+    = Lookup keys path
+  Lookup (Key name ty ': _) ('Leaf name)
     = 'Just ty
-  Lookup (Field name ty ': _) name
+  Lookup (Key name ty ': _) name
     = 'Just ty
-  Lookup (_ ': fields) path
-    = Lookup fields path
+  Lookup (_ ': keys) path
+    = Lookup keys path
   Lookup '[] _
     = 'Nothing
 
-type family ErrorWhenNothing fields (path :: k) (maybeTy :: Maybe *) :: Constraint where
-  ErrorWhenNothing _ _ ('Just _)
+type family ErrorWhenNoType keys (path :: k) (maybeTy :: Maybe *) :: Constraint where
+  ErrorWhenNoType _ _ ('Just _)
     = ()
-  ErrorWhenNothing fields path 'Nothing
+  ErrorWhenNoType keys path 'Nothing
     = TypeError
-        (     'Text "The field "
-        ':<>: PathNamesError (PathNames path)
-        ':<>: 'Text " could not be found. The available fields are:"
-        ':$$: FieldNamesError ('Text "  ") fields
+        (     'Text "The key "
+        ':<>: PathError path
+        ':<>: 'Text " could not be found. The available keys are:"
+        ':$$: KeyNamesError ('Text "  ") keys
         )
+
+type PathError path
+  = PathNamesError (PathNames path)
 
 type family PathNamesError (names :: [Symbol]) :: ErrorMessage where
   PathNamesError '[name]
@@ -96,42 +152,46 @@ type family PathNamesError (names :: [Symbol]) :: ErrorMessage where
   PathNamesError '[]
     = 'Text ""
 
-type family FieldNamesError (prefix :: ErrorMessage) (fields :: [*]) :: ErrorMessage where
-  FieldNamesError prefix '[Field name subfields]
+type family KeyNamesError (prefix :: ErrorMessage) (keys :: [*]) :: ErrorMessage where
+  KeyNamesError prefix '[Key name subkeys]
     =     prefix
     ':<>: 'ShowType name
     ':<>: 'Text " //"
-    ':$$: FieldNamesError (prefix ':<>: 'Text "  ") subfields
-  FieldNamesError prefix '[Field name ty]
+    ':$$: KeyNamesError (prefix ':<>: 'Text "  ") subkeys
+  KeyNamesError prefix '[Key name ty]
     =     prefix
     ':<>: 'ShowType name
     ':<>: 'Text " :: "
     ':<>: 'ShowType ty
-  FieldNamesError prefix (Field name subfields ': fields)
+  KeyNamesError prefix (Key name subkeys ': keys)
     =     prefix
     ':<>: 'ShowType name
     ':<>: 'Text " //"
-    ':$$: FieldNamesError (prefix ':<>: 'Text "  ") subfields
-    ':$$: FieldNamesError prefix fields
-  FieldNamesError prefix (Field name ty ': fields)
+    ':$$: KeyNamesError (prefix ':<>: 'Text "  ") subkeys
+    ':$$: KeyNamesError prefix keys
+  KeyNamesError prefix (Key name ty ': keys)
     =     prefix
     ':<>: 'ShowType name
     ':<>: 'Text " :: "
     ':<>: 'ShowType ty
-    ':$$: FieldNamesError prefix fields
+    ':$$: KeyNamesError prefix keys
 
-type family FieldAssocs (f :: * -> *) (fields :: [*]) :: [(Path Symbol, *)] where
-  FieldAssocs f fields
-    = FieldAssocs' f '[] fields
+type family FromJust (a :: Maybe k) :: k where
+  FromJust ('Just a)
+    = a
 
-type family FieldAssocs' (f :: * -> *) (path :: [Symbol]) (fields :: [*]) :: [(Path Symbol, *)] where
-  FieldAssocs' f path (Field name subfields ': fields)
-    =  FieldAssocs' f (name ': path) subfields
-    ++ FieldAssocs' f path fields
-  FieldAssocs' f path (Field name ty ': fields)
+type family KeyAssocs (f :: * -> *) (keys :: [*]) :: [(Path Symbol, *)] where
+  KeyAssocs f keys
+    = KeyAssocs' f '[] keys
+
+type family KeyAssocs' (f :: * -> *) (path :: [Symbol]) (keys :: [*]) :: [(Path Symbol, *)] where
+  KeyAssocs' f path (Key name subkeys ': keys)
+    =  KeyAssocs' f (name ': path) subkeys
+    ++ KeyAssocs' f path keys
+  KeyAssocs' f path (Key name ty ': keys)
     =  '(NamesPath (Reverse (name ': path)), f ty)
-    ': FieldAssocs' f path fields
-  FieldAssocs' _ _ '[]
+    ': KeyAssocs' f path keys
+  KeyAssocs' _ _ '[]
     = '[]
 
 type family Reverse (as :: [k]) :: [k] where

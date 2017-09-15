@@ -24,7 +24,7 @@ module Atomic
   , Builder
   , runBuilder
   , andThen
-  , validateComposite
+  , validateContextual
   , requireValid
   , lookupValid
   ) where
@@ -53,16 +53,16 @@ deriving instance Show (Plain a) => Show (Unvalidated a)
 deriving instance ToJSON (Plain a) => ToJSON (Unvalidated a)
 
 data ValidLookupResult a
-  = MissingField
-  | InvalidField (Plain a, PlainError a)
-  | ValidField a
+  = MissingKey
+  | InvalidKey (Plain a, PlainError a)
+  | ValidKey a
 
 validLookupResultToMaybe :: ValidLookupResult a -> Maybe a
 validLookupResultToMaybe
   = \case
-      MissingField    -> Nothing
-      InvalidField _  -> Nothing
-      ValidField x    -> Just x
+      MissingKey    -> Nothing
+      InvalidKey _  -> Nothing
+      ValidKey x    -> Just x
 
 deriving instance (Eq (Plain a), Eq (PlainError a), Eq a)
                 => Eq (ValidLookupResult a)
@@ -78,15 +78,15 @@ instance (ToJSON (Plain a), ToJSON (PlainError a), ToJSON a)
 
   toJSON
     = \case
-        MissingField ->
+        MissingKey ->
           object
-            [ "type"  .= ("MissingField" :: String)
+            [ "type"  .= ("MissingKey" :: String)
             , "value" .= ()
             ]
 
-        InvalidField (x, e) ->
+        InvalidKey (x, e) ->
           object
-            [ "type"  .= ("InvalidField" :: String)
+            [ "type"  .= ("InvalidKey" :: String)
             , "value" .= object
                 [ "plain" .= x
                 , "error" .= e
@@ -94,86 +94,86 @@ instance (ToJSON (Plain a), ToJSON (PlainError a), ToJSON a)
 
             ]
 
-        ValidField y ->
+        ValidKey y ->
           object
-            [ "type"  .= ("ValidField" :: String)
+            [ "type"  .= ("ValidKey" :: String)
             , "value" .= y
             ]
 
 insertPlain
-  :: forall name fields ty.
-     (HasField fields name ty,
+  :: forall name keys ty.
+     (HasKey keys name ty,
       Valid ty)
 
   => Plain ty
-  -> Bag Unvalidated fields
-  -> Bag Unvalidated fields
+  -> Bag Unvalidated keys
+  -> Bag Unvalidated keys
 
 insertPlain
   = insert @name . Unvalidated
 
-newtype Builder fields composites a
+newtype Builder keys contextuals a
   = Builder
       { _runBuilder
-          :: BagState fields composites
-          -> (Maybe a, BagState fields composites)
+          :: BagState keys contextuals
+          -> (Maybe a, BagState keys contextuals)
 
       }
 
-data BagState fields composites
+data BagState keys contextuals
   = BagState
-      { _bsUnvalidated :: Bag Unvalidated fields
-      , _bsLookups     :: Bag ValidLookupResult fields
-      , _bsComposites  :: Bag Identity composites
+      { _bsUnvalidated :: Bag Unvalidated keys
+      , _bsLookups     :: Bag ValidLookupResult keys
+      , _bsContextuals :: Bag Identity contextuals
       }
 
 runBuilder
-  :: forall fields composites a.
-     Bag Unvalidated fields
-  -> Builder fields composites a
-  -> (Maybe a, Bag ValidLookupResult fields, Bag Identity composites)
+  :: forall keys contextuals a.
+     Bag Unvalidated keys
+  -> Builder keys contextuals a
+  -> (Maybe a, Bag ValidLookupResult keys, Bag Identity contextuals)
 
 runBuilder b (Builder k)
   = let s         = BagState b empty empty
         (mx, s')  = k s
 
-    in  (mx, _bsLookups s', _bsComposites s')
+    in  (mx, _bsLookups s', _bsContextuals s')
 
 writeLookupResult
-  :: forall name fields composites ty.
-     HasField fields name ty
+  :: forall name keys contextuals ty.
+     HasKey keys name ty
   => ValidLookupResult ty
-  -> BagState fields composites
-  -> BagState fields composites
+  -> BagState keys contextuals
+  -> BagState keys contextuals
 
 writeLookupResult r s
   = s { _bsLookups = insert @name r (_bsLookups s) }
 
 writeAndReturnLookupResult
-  :: forall name fields composites ty.
-     HasField fields name ty
+  :: forall name keys contextuals ty.
+     HasKey keys name ty
   => ValidLookupResult ty
-  -> BagState fields composites
-  -> (Maybe (ValidLookupResult ty), BagState fields composites)
+  -> BagState keys contextuals
+  -> (Maybe (ValidLookupResult ty), BagState keys contextuals)
 
 writeAndReturnLookupResult r s
   = (Just r, writeLookupResult @name r s)
 
-writeCompositeResult
-  :: forall name fields composites err.
-     HasField composites name err
+writeContextualResult
+  :: forall name keys contextuals err.
+     HasKey contextuals name err
   => err
-  -> BagState fields composites
-  -> BagState fields composites
+  -> BagState keys contextuals
+  -> BagState keys contextuals
 
-writeCompositeResult e s
-  = s { _bsComposites = insertValue @name e (_bsComposites s) }
+writeContextualResult e s
+  = s { _bsContextuals = insertValue @name e (_bsContextuals s) }
 
-instance Functor (Builder fields composites) where
+instance Functor (Builder keys contextuals) where
   fmap f (Builder k)
     = Builder (\s -> let (mx, s') = k s in (fmap f mx, s'))
 
-instance Applicative (Builder fields composites) where
+instance Applicative (Builder keys contextuals) where
   pure
     = Builder . (,) . Just
 
@@ -185,9 +185,9 @@ instance Applicative (Builder fields composites) where
         in  (mf <*> mx, s'')
 
 andThen
-  :: Builder fields composites a
-  -> (a -> Builder fields composites b)
-  -> Builder fields composites b
+  :: Builder keys contextuals a
+  -> (a -> Builder keys contextuals b)
+  -> Builder keys contextuals b
 
 andThen (Builder k) h
   = Builder $ \s ->
@@ -197,54 +197,54 @@ andThen (Builder k) h
         (Just x, s') ->
           _runBuilder (h x) s'
 
-validateComposite
-  :: forall name fields composites e ty.
-     HasField composites name e
+validateContextual
+  :: forall name keys contextuals e ty.
+     HasKey contextuals name e
   => Validation e ty
-  -> Builder fields composites ty
+  -> Builder keys contextuals ty
 
-validateComposite v
+validateContextual v
   = Builder $ \s ->
       case v of
         Failure e ->
-          (Nothing, writeCompositeResult @name e s)
+          (Nothing, writeContextualResult @name e s)
         Success x ->
           (Just x, s)
 
 requireValid
-  :: forall name fields composites ty.
-     (HasField fields name ty,
+  :: forall name keys contextuals ty.
+     (HasKey keys name ty,
       Valid ty)
 
-  => Builder fields composites ty
+  => Builder keys contextuals ty
 
 requireValid
   = Builder $ \s ->
       case lookup @name (_bsUnvalidated s) of
         Nothing ->
-          (Nothing, writeLookupResult @name MissingField s)
+          (Nothing, writeLookupResult @name MissingKey s)
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              (Nothing, writeLookupResult @name (InvalidField (x, e)) s)
+              (Nothing, writeLookupResult @name (InvalidKey (x, e)) s)
             Success y ->
-              (Just y, writeLookupResult @name (ValidField y) s)
+              (Just y, writeLookupResult @name (ValidKey y) s)
 
 lookupValid
-  :: forall name fields composites ty.
-     (HasField fields name ty,
+  :: forall name keys contextuals ty.
+     (HasKey keys name ty,
       Valid ty)
 
-  => Builder fields composites (ValidLookupResult ty)
+  => Builder keys contextuals (ValidLookupResult ty)
 
 lookupValid
   = Builder $ \s ->
       case lookup @name (_bsUnvalidated s) of
         Nothing ->
-          writeAndReturnLookupResult @name MissingField s
+          writeAndReturnLookupResult @name MissingKey s
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              writeAndReturnLookupResult @name (InvalidField (x, e)) s
+              writeAndReturnLookupResult @name (InvalidKey (x, e)) s
             Success y ->
-              writeAndReturnLookupResult @name (ValidField y) s
+              writeAndReturnLookupResult @name (ValidKey y) s

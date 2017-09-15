@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
@@ -24,32 +25,47 @@ import Validation as Exports
 import Data.Aeson hiding (Result(..))
 
 type PersonFields
-  = '[ Field "Name" Name
-     , Field "Age"  Age
-     , Field "Pet"  PetFields
+  = '[ Key "Name" Name
+     , Key "Age"  Age
+     , Key "Pet"  PetFields
      ]
 
 type PetFields
-  = '[ Field "Name" Name
-     , Field "Age"  Age
+  = '[ Key "Name" Name
+     , Key "Age"  Age
      ]
 
-type PersonComposites
-  = '[ Field "NameAge" (Either String String)
+type PersonContextuals
+  = '[ Key "NameAge" (Either String String)
      ]
 
-data PersonFormContext
-  = PersonFormContext
+data PersonForm
+  = PersonForm
 
-instance FormContext PersonFormContext where
-  type FormFields PersonFormContext
+instance Form PersonForm where
+  type FormFields PersonForm
     = PersonFields
-  type FormComposites PersonFormContext
-    = PersonComposites
+  type FormContextuals PersonForm
+    = PersonContextuals
 
-instance FormField PersonFormContext "Name" '["NameAge", "NameAge"] where
-  toFormField
-    = undefined
+instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
+  toFormField _form result (_nameAge1 :: Maybe (Either String String)) (_nameAge2 :: Maybe (Either String String))
+    = TextQ TextQuestion
+        { _tqKey      = QuestionKey "Name"
+        , _tqQuestion = "What is your name?"
+        , _tqValue    = value
+        , _tqError    = err
+        }
+
+    where
+      (value, err)
+        = case result of
+            MissingKey ->
+              (Nothing, Just "Please tell us your name")
+            InvalidKey (v, e) ->
+              (Just (show v), Just e)
+            ValidKey v ->
+              (Just (show (unvalidateValid v)), Nothing)
 
 newtype Name
   = Name { _nameString :: String }
@@ -104,7 +120,7 @@ mkPerson n a
   | a == Age 30      = Failure (Right "Bad age")
   | otherwise        = Success (Person n a)
 
-c1 :: Builder PersonFields PersonComposites Age
+c1 :: Builder PersonFields PersonContextuals Age
 c1
   = (   (,,)
     <$> requireValid @"Name"
@@ -114,11 +130,11 @@ c1
 
     `andThen` \(_name, age, petNameResult) ->
       case petNameResult of
-        MissingField ->
+        MissingKey ->
           pure age
-        InvalidField _ ->
+        InvalidKey _ ->
           pure age
-        ValidField _petName ->
+        ValidKey _petName ->
           requireValid @("Pet" // "Age")
 
 {-
