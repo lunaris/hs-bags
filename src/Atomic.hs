@@ -5,7 +5,6 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -29,6 +28,7 @@ module Atomic
   , lookupValid
   ) where
 
+import Assocs
 import Operations
 import Types
 import Validation
@@ -101,37 +101,32 @@ instance (ToJSON (Plain a), ToJSON (PlainError a), ToJSON a)
             ]
 
 insertPlain
-  :: forall name keys ty.
-     (HasKey keys name ty,
+  :: forall k as ty.
+     (HasKey as k ty,
       Valid ty)
 
   => Plain ty
-  -> Bag Unvalidated keys
-  -> Bag Unvalidated keys
+  -> Bag Unvalidated as
+  -> Bag Unvalidated as
 
 insertPlain
-  = insert @name . Unvalidated
+  = insert @k . Unvalidated
 
-newtype Builder keys contextuals a
-  = Builder
-      { _runBuilder
-          :: BagState keys contextuals
-          -> (Maybe a, BagState keys contextuals)
+newtype Builder fas cas a
+  = Builder { _runBuilder :: BagState fas cas -> (Maybe a, BagState fas cas) }
 
-      }
-
-data BagState keys contextuals
+data BagState fas cas
   = BagState
-      { _bsUnvalidated :: Bag Unvalidated keys
-      , _bsLookups     :: Bag ValidLookupResult keys
-      , _bsContextuals :: Bag Identity contextuals
+      { _bsUnvalidated :: Bag Unvalidated fas
+      , _bsLookups     :: Bag ValidLookupResult fas
+      , _bsContextuals :: Bag Identity cas
       }
 
 runBuilder
-  :: forall keys contextuals a.
-     Bag Unvalidated keys
-  -> Builder keys contextuals a
-  -> (Maybe a, Bag ValidLookupResult keys, Bag Identity contextuals)
+  :: forall fas cas a.
+     Bag Unvalidated fas
+  -> Builder fas cas a
+  -> (Maybe a, Bag ValidLookupResult fas, Bag Identity cas)
 
 runBuilder b (Builder k)
   = let s         = BagState b empty empty
@@ -140,40 +135,40 @@ runBuilder b (Builder k)
     in  (mx, _bsLookups s', _bsContextuals s')
 
 writeLookupResult
-  :: forall name keys contextuals ty.
-     HasKey keys name ty
+  :: forall k fas cas ty.
+     HasKey fas k ty
   => ValidLookupResult ty
-  -> BagState keys contextuals
-  -> BagState keys contextuals
+  -> BagState fas cas
+  -> BagState fas cas
 
 writeLookupResult r s
-  = s { _bsLookups = insert @name r (_bsLookups s) }
+  = s { _bsLookups = insert @k r (_bsLookups s) }
 
 writeAndReturnLookupResult
-  :: forall name keys contextuals ty.
-     HasKey keys name ty
+  :: forall k fas cas ty.
+     HasKey fas k ty
   => ValidLookupResult ty
-  -> BagState keys contextuals
-  -> (Maybe (ValidLookupResult ty), BagState keys contextuals)
+  -> BagState fas cas
+  -> (Maybe (ValidLookupResult ty), BagState fas cas)
 
 writeAndReturnLookupResult r s
-  = (Just r, writeLookupResult @name r s)
+  = (Just r, writeLookupResult @k r s)
 
 writeContextualResult
-  :: forall name keys contextuals err.
-     HasKey contextuals name err
+  :: forall k fas cas err.
+     HasKey cas k err
   => err
-  -> BagState keys contextuals
-  -> BagState keys contextuals
+  -> BagState fas cas
+  -> BagState fas cas
 
 writeContextualResult e s
-  = s { _bsContextuals = insertValue @name e (_bsContextuals s) }
+  = s { _bsContextuals = insertValue @k e (_bsContextuals s) }
 
-instance Functor (Builder keys contextuals) where
+instance Functor (Builder fas cas) where
   fmap f (Builder k)
     = Builder (\s -> let (mx, s') = k s in (fmap f mx, s'))
 
-instance Applicative (Builder keys contextuals) where
+instance Applicative (Builder fas cas) where
   pure
     = Builder . (,) . Just
 
@@ -185,9 +180,9 @@ instance Applicative (Builder keys contextuals) where
         in  (mf <*> mx, s'')
 
 andThen
-  :: Builder keys contextuals a
-  -> (a -> Builder keys contextuals b)
-  -> Builder keys contextuals b
+  :: Builder fas cas a
+  -> (a -> Builder fas cas b)
+  -> Builder fas cas b
 
 andThen (Builder k) h
   = Builder $ \s ->
@@ -198,53 +193,53 @@ andThen (Builder k) h
           _runBuilder (h x) s'
 
 validateContextual
-  :: forall name keys contextuals e ty.
-     HasKey contextuals name e
+  :: forall k fas cas e ty.
+     HasKey cas k e
   => Validation e ty
-  -> Builder keys contextuals ty
+  -> Builder fas cas ty
 
 validateContextual v
   = Builder $ \s ->
       case v of
         Failure e ->
-          (Nothing, writeContextualResult @name e s)
+          (Nothing, writeContextualResult @k e s)
         Success x ->
           (Just x, s)
 
 requireValid
-  :: forall name keys contextuals ty.
-     (HasKey keys name ty,
+  :: forall k fas cas ty.
+     (HasKey fas k ty,
       Valid ty)
 
-  => Builder keys contextuals ty
+  => Builder fas cas ty
 
 requireValid
   = Builder $ \s ->
-      case lookup @name (_bsUnvalidated s) of
+      case lookup @k (_bsUnvalidated s) of
         Nothing ->
-          (Nothing, writeLookupResult @name MissingKey s)
+          (Nothing, writeLookupResult @k MissingKey s)
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              (Nothing, writeLookupResult @name (InvalidKey (x, e)) s)
+              (Nothing, writeLookupResult @k (InvalidKey (x, e)) s)
             Success y ->
-              (Just y, writeLookupResult @name (ValidKey y) s)
+              (Just y, writeLookupResult @k (ValidKey y) s)
 
 lookupValid
-  :: forall name keys contextuals ty.
-     (HasKey keys name ty,
+  :: forall k fas cas ty.
+     (HasKey fas k ty,
       Valid ty)
 
-  => Builder keys contextuals (ValidLookupResult ty)
+  => Builder fas cas (ValidLookupResult ty)
 
 lookupValid
   = Builder $ \s ->
-      case lookup @name (_bsUnvalidated s) of
+      case lookup @k (_bsUnvalidated s) of
         Nothing ->
-          writeAndReturnLookupResult @name MissingKey s
+          writeAndReturnLookupResult @k MissingKey s
         Just (Unvalidated x) ->
           case validatePlain x of
             Failure e ->
-              writeAndReturnLookupResult @name (InvalidKey (x, e)) s
+              writeAndReturnLookupResult @k (InvalidKey (x, e)) s
             Success y ->
-              writeAndReturnLookupResult @name (ValidKey y) s
+              writeAndReturnLookupResult @k (ValidKey y) s

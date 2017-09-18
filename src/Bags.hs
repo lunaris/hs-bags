@@ -15,29 +15,25 @@ module Bags
   , module Bags
   ) where
 
+import Assocs     as Exports
 import Atomic     as Exports
 import Form       as Exports
 import JSON       as Exports
 import Operations as Exports
-import Paths      as Exports
 import Types      as Exports
 import Validation as Exports
 
 import Data.Aeson hiding (Result(..))
 
 type PersonFields
-  = '[ Key "Name" Name
-     , Key "Age"  Age
-     , Key "Pet"  PetFields
-     ]
-
-type PetFields
-  = '[ Key "Name" Name
-     , Key "Age"  Age
+  = '[ '("Name",     Name)
+     , '("Age",      Age)
+     , '("Pet/Name", Name)
+     , '("Pet/Age",  Age)
      ]
 
 type PersonContextuals
-  = '[ Key "NameAge" (Either String String)
+  = '[ '("NameAge", Either String String)
      ]
 
 data PersonForm
@@ -49,7 +45,7 @@ instance Form PersonForm where
   type FormContextuals PersonForm
     = PersonContextuals
 
-instance FormField PersonForm [p| Name |] [ps| NameAge, NameAge |] where
+instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
   toFormField _form result _nameAge1 _nameAge2
     = TextQ TextQuestion
         { _tqKey      = QuestionKey "Name"
@@ -68,7 +64,7 @@ instance FormField PersonForm [p| Name |] [ps| NameAge, NameAge |] where
             ValidKey v ->
               (Just (show (unvalidateValid v)), Nothing)
 
-instance FormField PersonForm [p| Pet/Name |] [ps| NameAge |] where
+instance FormField PersonForm "Pet/Name" '["NameAge"] where
   toFormField _form result _nameAge
     = TextQ TextQuestion
         { _tqKey      = QuestionKey "Pet name"
@@ -121,10 +117,10 @@ instance Valid Age where
 b1, b2, b3, b4
   :: Bag Unvalidated PersonFields
 
-b1 = insertPlain @[p| Name |] "Will" empty
-b2 = insertPlain @[p| Age |] 30 b1
-b3 = insertPlain @[p| Age |] (-2) b1
-b4 = insertPlain @[p| Pet/Name |] "Fido" b2
+b1 = insertPlain @"Name" "Will" empty
+b2 = insertPlain @"Age" 30 b1
+b3 = insertPlain @"Age" (-2) b1
+b4 = insertPlain @"Pet/Name" "Fido" b2
 
 data Person
   = Person
@@ -143,9 +139,9 @@ mkPerson n a
 c1 :: Builder PersonFields PersonContextuals Age
 c1
   = (   (,,)
-    <$> requireValid @[p| Name |]
-    <*> requireValid @[p| Age |]
-    <*> lookupValid @[p| Pet/Name |]
+    <$> requireValid @"Name"
+    <*> requireValid @"Age"
+    <*> lookupValid @"Pet/Name"
     )
 
     `andThen` \(_name, age, petNameResult) ->
@@ -155,4 +151,4 @@ c1
         InvalidKey _ ->
           pure age
         ValidKey _petName ->
-          requireValid @[p| Pet/Age |]
+          requireValid @"Pet/Age"

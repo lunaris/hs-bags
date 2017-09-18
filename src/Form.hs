@@ -5,9 +5,9 @@
 {-# LANGUAGE KindSignatures         #-}
 {-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE PolyKinds              #-}
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TypeInType             #-}
 
 module Form
   ( Form (..)
@@ -23,24 +23,26 @@ module Form
   , renderQuestion
   ) where
 
+import Assocs
 import Atomic
 import HList
-import Types
+
+import Data.Kind
 
 class Form form where
-  type FormFields form      :: [*]
-  type FormContextuals form :: [*]
+  type FormFields form      :: [Assoc Type]
+  type FormContextuals form :: [Assoc Type]
 
 class (Form form,
-       HasKey' (FormFields form) fieldName,
-       HasKeys' (FormContextuals form) contextualNames)
+       HasKey' (FormFields form) fk,
+       HasKeys' (FormContextuals form) cks)
 
-    => FormField form fieldName contextualNames where
+    => FormField form fk cks where
 
   toFormField
     :: form
-    -> ValidLookupResult (KeyType (FormFields form) fieldName)
-    -> UncurryF Maybe (KeysTypes (FormContextuals form) contextualNames) Question
+    -> ValidLookupResult (KeyValue (FormFields form) fk)
+    -> UncurryF Maybe (KeysValues (FormContextuals form) cks) Question
 
 newtype QuestionKey
   = QuestionKey { _questionKeyString :: String }
