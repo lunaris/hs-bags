@@ -36,6 +36,23 @@ type PersonContextuals
   = '[ '("NameAge", Either String String)
      ]
 
+type PersonGroups
+  = '[ '( "PersonalDetails"
+        , '[ "Name"
+           , "Age"
+           ]
+
+        )
+
+     , '( "PetDetails"
+        , '[ "Pet/Name"
+           , "Pet/Age"
+           ]
+
+        )
+
+     ]
+
 data PersonForm
   = PersonForm
 
@@ -44,8 +61,12 @@ instance Form PersonForm where
     = PersonFields
   type FormContextuals PersonForm
     = PersonContextuals
+  type FormGroups PersonForm
+    = PersonGroups
 
-instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
+instance FormField PersonForm "Name" where
+  type ContextualKeys PersonForm "Name"
+    = '["NameAge", "NameAge"]
   toFormField _form result _nameAge1 _nameAge2
     = TextQ TextQuestion
         { _tqKey      = QuestionKey "Name"
@@ -64,7 +85,9 @@ instance FormField PersonForm "Name" '["NameAge", "NameAge"] where
             ValidKey v ->
               (Just (show (unvalidateValid v)), Nothing)
 
-instance FormField PersonForm "Pet/Name" '["NameAge"] where
+instance FormField PersonForm "Pet/Name" where
+  type ContextualKeys PersonForm "Pet/Name"
+    = '["NameAge"]
   toFormField _form result _nameAge
     = TextQ TextQuestion
         { _tqKey      = QuestionKey "Pet name"
@@ -141,7 +164,7 @@ c1
   = (   (,,)
     <$> requireValid @"Name"
     <*> requireValid @"Age"
-    <*> lookupValid @"Pet/Name"
+    <*> checkValid @"Pet/Name"
     )
 
     `andThen` \(_name, age, petNameResult) ->

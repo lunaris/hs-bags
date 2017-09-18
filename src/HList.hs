@@ -33,13 +33,18 @@ type family Uncurry (as :: [*]) (r :: *) :: * where
   Uncurry '[] r
     = r
 
-class Curried as where
+class Arguments as where
   uncurryHListF :: (HListF f as -> r) -> UncurryF f as r
+  curryHListF   :: UncurryF f as r -> HListF f as -> r
 
-instance Curried '[] where
+instance Arguments '[] where
   uncurryHListF k
     = k HNilF
+  curryHListF r HNilF
+    = r
 
-instance Curried as => Curried (a ': as) where
+instance Arguments as => Arguments (a ': as) where
   uncurryHListF k x
     = uncurryHListF (k . HConsF x)
+  curryHListF k (HConsF x xs)
+    = curryHListF (k x) xs

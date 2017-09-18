@@ -7,7 +7,9 @@
 
 module Operations where
 
+import All
 import Assocs
+import HList
 import Types
 
 import           Control.Monad.Reader
@@ -16,6 +18,7 @@ import           Data.Dynamic
 import           Data.Functor.Identity
 import qualified Data.Map.Strict       as M
 import           Prelude               hiding (lookup)
+import           Unsafe.Coerce
 
 empty :: Bag f as
 empty
@@ -46,6 +49,28 @@ lookup
   where
     k (Bag m)
       = M.lookup (keyText @k) m >>= fromDynamic
+
+lookupAll
+  :: forall ks f as m.
+     (MonadReader (Bag f as) m,
+      Typeable f,
+      HasKeys' as ks)
+
+  => m (HListF Maybe (KeysValues as ks))
+
+lookupAll
+  = asks k
+  where
+    k :: Bag f as -> HListF Maybe tys
+    k b
+      = unsafeCoerce @(HListF (MaybeValue f as) ks) (toHListF @_ @(HasKey' as) h)
+      where
+        h :: forall k. HasKey' as k => MaybeValue f as k
+        h
+          = MaybeValue (lookup @k b)
+
+newtype MaybeValue f as k
+  = MaybeValue { getMaybeValue :: Maybe (f (KeyValue as k)) }
 
 insertValue
   :: forall k as ty.
