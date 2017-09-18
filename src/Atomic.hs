@@ -19,13 +19,14 @@ module Atomic
   , validLookupResultToMaybe
 
   , insertPlain
+  , lookupValid
 
   , Builder
   , runBuilder
   , andThen
   , validateContextual
   , requireValid
-  , lookupValid
+  , checkValid
   ) where
 
 import Assocs
@@ -34,6 +35,7 @@ import Types
 import Validation
 
 import Control.Monad
+import Control.Monad.Reader
 import Data.Aeson            hiding (Result(..))
 import Data.Functor.Identity
 import Prelude               hiding (lookup)
@@ -111,6 +113,28 @@ insertPlain
 
 insertPlain
   = insert @k . Unvalidated
+
+lookupValid
+  :: forall k as ty m.
+     (MonadReader (Bag Unvalidated as) m,
+      HasKey as k ty,
+      Valid ty)
+
+  => m (ValidLookupResult ty)
+
+lookupValid
+  = fmap k (lookup @k)
+  where
+    k
+      = \case
+          Nothing ->
+            MissingKey
+          Just (Unvalidated x) ->
+            case validatePlain x of
+              Failure e ->
+                InvalidKey (x, e)
+              Success y ->
+                ValidKey y
 
 newtype Builder fas cas a
   = Builder { _runBuilder :: BagState fas cas -> (Maybe a, BagState fas cas) }
@@ -225,14 +249,14 @@ requireValid
             Success y ->
               (Just y, writeLookupResult @k (ValidKey y) s)
 
-lookupValid
+checkValid
   :: forall k fas cas ty.
      (HasKey fas k ty,
       Valid ty)
 
   => Builder fas cas (ValidLookupResult ty)
 
-lookupValid
+checkValid
   = Builder $ \s ->
       case lookup @k (_bsUnvalidated s) of
         Nothing ->

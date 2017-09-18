@@ -28,6 +28,7 @@ module Assocs
   ) where
 
 import All
+import HList
 
 import           Data.Kind
 import qualified Data.Text     as Tx
@@ -52,12 +53,17 @@ type family Snd (t :: (a, b)) :: b where
   Snd '(a, b)
     = b
 
-class HasKeys' (as :: [Assoc value]) (ks :: [Key]) where
+class (All (HasKey' as) ks,
+       Arguments (KeysValues as ks))
+    => HasKeys' (as :: [Assoc value]) (ks :: [Key]) where
+
   type KeysValues as ks :: [value]
 
 instance (LookupAll as ks ~ maybeVs,
           maybeVs ~ 'Just vs,
+          All (HasKey' as) ks,
           All Typeable vs,
+          Arguments vs,
           ErrorWhenNoValues as ks maybeVs)
 
       =>  HasKeys' (as :: [Assoc value]) (ks :: [Key]) where
@@ -65,7 +71,10 @@ instance (LookupAll as ks ~ maybeVs,
   type KeysValues as ks
     = FromJust (LookupAll as ks)
 
-class HasKeys (as :: [Assoc value]) (ks :: [Key]) (vs :: [value]) | as ks -> vs
+class (HasKeys' as ks,
+       KeysValues as ks ~ vs)
+
+    => HasKeys (as :: [Assoc value]) (ks :: [Key]) (vs :: [value]) | as ks -> vs
 
 instance (HasKeys' as ks,
           KeysValues as ks ~ vs)
@@ -125,13 +134,13 @@ instance (KnownSymbol k,
   type KeyValue as k
     = FromJust (Lookup as k)
 
-class (KnownSymbol k, Typeable v)
+class (HasKey' as k,
+       KeyValue as k ~ v)
+
     => HasKey (as :: [Assoc value]) (k :: Key) (v :: value) | as k -> v
 
-instance (KnownSymbol k,
-          HasKey' as k,
-          KeyValue as k ~ v,
-          Typeable v)
+instance (HasKey' as k,
+          KeyValue as k ~ v)
 
       =>  HasKey (as :: [Assoc value]) (k :: Key) (v :: value)
 

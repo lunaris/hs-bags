@@ -11,5 +11,5 @@ import           Data.Kind
 import qualified Data.Map.Strict as M
 import qualified Data.Text       as Tx
 
-newtype Bag f (as :: [Assoc Type])
+newtype Bag (f :: Type -> Type) (as :: [Assoc Type])
   = Bag { _bagMap :: M.Map Tx.Text Dynamic }
