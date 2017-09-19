@@ -20,10 +20,6 @@ import qualified Data.Map.Strict       as M
 import           Prelude               hiding (lookup)
 import           Unsafe.Coerce
 
-empty :: Bag f as
-empty
-  = Bag M.empty
-
 insert
   :: forall k f as ty.
      (Typeable f,
@@ -35,6 +31,17 @@ insert
 
 insert x (Bag m)
   = Bag (M.insert (keyText @k) (toDyn x) m)
+
+singleton
+  :: forall k f as ty.
+     (Typeable f,
+      HasKey as k ty)
+
+  => f ty
+  -> Bag f as
+
+singleton x
+  = insert @k x mempty
 
 lookup
   :: forall k f as ty m.
@@ -91,7 +98,3 @@ lookupValue
 
 lookupValue
   = coerce <$> lookup @k
-
-union :: Bag f as -> Bag f as -> Bag f as
-union (Bag m1) (Bag m2)
-  = Bag (m1 `M.union` m2)

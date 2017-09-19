@@ -153,7 +153,7 @@ runBuilder
   -> (Maybe a, Bag ValidLookupResult fas, Bag Identity cas)
 
 runBuilder b (Builder k)
-  = let s         = BagState b empty empty
+  = let s         = BagState b mempty mempty
         (mx, s')  = k s
 
     in  (mx, _bsLookups s', _bsContextuals s')

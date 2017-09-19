@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeApplications           #-}
@@ -180,7 +181,7 @@ instance Valid Age where
 b1, b2, b3, b4, b5
   :: Bag Unvalidated PersonFields
 
-b1 = insertPlain @"Name" "Will" empty
+b1 = insertPlain @"Name" "Will" mempty
 b2 = insertPlain @"Age" 30 b1
 b3 = insertPlain @"Age" (-2) b1
 b4 = insertPlain @"Pet/Name" "Fido" b2
