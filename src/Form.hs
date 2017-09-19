@@ -20,7 +20,6 @@ module Form
   , renderForm
   , renderGroup
   , renderFields
-  , fromAnswers
 
   , QuestionKey (..)
 
@@ -30,6 +29,8 @@ module Form
 
   , Answer (..)
   , AnswerValue (..)
+  , FromAnswerValue (..)
+  , fromAnswers
 
   , printQuestions
   ) where
@@ -131,6 +132,47 @@ renderFields form fs cs
 
             ]
 
+newtype QuestionKey
+  = QuestionKey { _questionKeyText :: Tx.Text }
+  deriving (Eq, Show)
+
+data Question
+  = GBPQ GBPQuestion
+  | TextQ TextQuestion
+  deriving (Eq, Show)
+
+data GBPQuestion
+  = GBPQuestion
+      { _gbpqKey      :: QuestionKey
+      , _gbpqQuestion :: String
+      , _gbpqValue    :: Maybe String
+      , _gbpqError    :: Maybe String
+      }
+
+  deriving (Eq, Show)
+
+data TextQuestion
+  = TextQuestion
+      { _tqKey      :: QuestionKey
+      , _tqQuestion :: String
+      , _tqValue    :: Maybe String
+      , _tqError    :: Maybe String
+      }
+
+  deriving (Eq, Show)
+
+data Answer
+  = Answer
+      { _aKey   :: QuestionKey
+      , _aValue :: AnswerValue
+      }
+
+  deriving (Eq, Show)
+
+data AnswerValue
+  = TextualAV String
+  deriving (Eq, Show)
+
 class (KnownSymbol (Fst a),
        Typeable f,
        Typeable (f (Snd a)),
@@ -199,47 +241,6 @@ fromAnswers
   where
     h (Answer k v)
       = withAll @_ @(AssocFromAnswer f as) @as (assocFromAnswer k v)
-
-newtype QuestionKey
-  = QuestionKey { _questionKeyText :: Tx.Text }
-  deriving (Eq, Show)
-
-data Question
-  = GBPQ GBPQuestion
-  | TextQ TextQuestion
-  deriving (Eq, Show)
-
-data GBPQuestion
-  = GBPQuestion
-      { _gbpqKey      :: QuestionKey
-      , _gbpqQuestion :: String
-      , _gbpqValue    :: Maybe String
-      , _gbpqError    :: Maybe String
-      }
-
-  deriving (Eq, Show)
-
-data TextQuestion
-  = TextQuestion
-      { _tqKey      :: QuestionKey
-      , _tqQuestion :: String
-      , _tqValue    :: Maybe String
-      , _tqError    :: Maybe String
-      }
-
-  deriving (Eq, Show)
-
-data Answer
-  = Answer
-      { _aKey   :: QuestionKey
-      , _aValue :: AnswerValue
-      }
-
-  deriving (Eq, Show)
-
-data AnswerValue
-  = TextualAV String
-  deriving (Eq, Show)
 
 printQuestions :: [Question] -> IO ()
 printQuestions
